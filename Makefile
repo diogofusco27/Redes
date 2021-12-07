@@ -1,4 +1,4 @@
 all: user
 
-user: user.c
-	gcc user.c -o User
+user: User.c
+	gcc User.c -o User
