@@ -12,85 +12,192 @@
 
 #define MAX_COMANDO 500
 #define MAX_TAREFA 20
-#define MAX_TEXTO 124
-#define MAX_UID 6
-#define MAX_PASSWORD 9
-#define MAX_IP 20
+#define MAX_STATUS 5
+#define MAX_TEXTO 240
+#define MAX_USERID 5
+#define MAX_IP 30
 #define MAX_PORT 5
+#define MAX_GROUPID 2 //maximo é 99 grupos
+#define MAX_MESSAGEID 3
+#define MAX_GROUPDISPLAY 3368  //tamanho de [ GID GName MID] = 1+2+1+24+1+4 | 99*33 +1
 
-/******* Validar o Port *******/
+
+bool userLogStatus = false; // true = login , false = logout
+char userLogID[MAX_USERID + 1] = "";
+char activeGroup[MAX_GROUPID + 1] = "";
+
+
+/******* Validar Port *******/
 bool validarPort (char* argv) {
-    int len = strlen(argv);
-    if (len != 5)
-        return false;
+  if (strlen(argv) != 5)
+      return false;
 
-    for(int i = 0; i < strlen(argv); i++) {
-        if (!isdigit(argv[i])) // Verificar que apenas contém números
-            return false;
+  for(int i = 0; i < strlen(argv); i++) {
+      if (!isdigit(argv[i])) // Verificar que apenas contém números
+          return false;
+  }
+
+  int port = atoi(argv);
+  if (port > 0 && port < 64000) // Não pode ser mais de 64000
+      return true;
+
+  return false;
+}
+
+/******* Cria a mensagem que vai ser enviada ao server *******/
+char* createMessage(char *comando, char *message){
+
+  char tarefa[MAX_TAREFA] = "";  //tarefa a executar
+
+  // le o tipo de tarefa que e para fazer do input
+  int i = 0;
+  for (i; isalpha(comando[i]) != 0; i++) {
+      tarefa[i] = comando[i];
+  }
+
+  //adicionar tarefa em maiusculas a mensagem
+  if (!strcmp(tarefa,"reg"))
+    strcpy(message,"REG");
+  else if (!strcmp(tarefa,"unregister") || !strcmp(tarefa,"unr"))
+    strcpy(message,"UNR");
+  else if (!strcmp(tarefa,"login"))
+    strcpy(message,"LOG");
+  else if (!strcmp(tarefa,"logout"))
+    strcpy(message,"OUT");
+  else if (!strcmp(tarefa,"groups") || !strcmp(tarefa,"gl"))
+    strcpy(message,"GLS");
+  else if (!strcmp(tarefa,"subscribe") || !strcmp(tarefa,"s"))
+    strcpy(message,"GSR");
+  else if (!strcmp(tarefa,"unsubscribe") || !strcmp(tarefa,"u"))
+    strcpy(message,"GUR");
+  else if (!strcmp(tarefa,"my_groups") || !strcmp(tarefa,"mgl"))
+    strcpy(message,"GLM");
+  else if (!strcmp(tarefa,"select") || !strcmp(tarefa,"sag"))
+    strcpy(message,"SAG");
+  else if (!strcmp(tarefa,"ulist") || !strcmp(tarefa,"ul"))
+    strcpy(message,"ULS");
+  else if (!strcmp(tarefa,"post"))
+    strcpy(message,"PST");
+  else if (!strcmp(tarefa,"retrieve") || !strcmp(tarefa,"r"))
+    strcpy(message,"RTV");
+  else // inclui se a tarefa for 'exit'
+    return comando;
+
+  int k = 3;
+  message[k] = ' '; //adicionar espaço a mensagem
+  i++, k++;
+
+  // copia o resto do comando para a mensagem
+  for (; comando[i] !='\n'; i++, k++) {
+      message[k] = comando[i];
+  }
+
+  message[k] = '\n'; //adiciona o '\n' no final da mensagem
+  return message;
+
+}
+
+
+/******* Validar lista de grupos *******/
+char* validarListaGrupos(int k, char *message_received, char* groups_list){
+  char list_aux[MAX_GROUPID + 1] = "";
+  char list_aux3[MAX_MESSAGEID + 1] = "";
+  int i = 0;
+
+  while(1){ // formato -> GID GName MID  | GID=Parte 1 , GName=Parte 2, MID=Parte 3
+
+    //PARTE 1
+    for (int w = 0; message_received[k] != ' ' && isdigit(message_received[k]) > 0; i++, w++, k++) {
+          list_aux[w] = message_received[k];
     }
-    int port = atoi(argv);
-    if (port > 0 && port < 64000) // Não pode ser mais de 64000
-        return true;
-    return false;
+
+    if( strlen(list_aux) != 2){
+      return  "";
+    }
+
+    strcat(groups_list, list_aux);
+    groups_list[i] = ' '; //adiciona espaço
+    strcpy(list_aux,"");
+    k++, i++;
+
+
+    //PARTE 2
+    for (i; message_received[k] != ' '; i++, k++) {
+        if (isdigit(message_received[k]) > 0 || isalpha(message_received[k]) != 0 ||
+            message_received[k] == '-' || message_received[k] == '_'){
+          groups_list[i] = message_received[k];
+        }
+        else{
+          return "";
+        }
+    }
+
+    groups_list[i] = ' '; //adiciona espaço
+    k++, i++;
+
+
+    //PARTE 3
+    for (int w = 0; message_received[k] != ' ' && isdigit(message_received[k]) > 0; i++, w++, k++) {
+          list_aux3[w] = message_received[k];
+    }
+
+    if( strlen(list_aux3) != 4){
+      return  "";
+    }
+
+    strcat(groups_list, list_aux3);
+    groups_list[i] = '\n'; //adiciona espaço
+    strcpy(list_aux3,"");
+
+    //verifica se esta no fim da lista
+    if(message_received[k] == '\n'){
+      return groups_list;
+    }
+    k++, i++;
+  }
+
 }
 
-/******* Validar user_UID *******/
-char* validarUser_UID(int i, char *comando, char *user_UID){
-  for (int k = 0; comando[i] != ' '; i++,k++) {
-      if (isdigit(comando[i]) > 0){
-          user_UID[k] = comando[i];
-      }
-      else {
-          printf("Erro no UID, tem que ser numerico\n");
-          exit(1);
-      }
+
+/******* Validar ID de grupos *******/
+char* validarGroup_ID(int i, char* comando, char* group_ID){
+  for (int w = 0; comando[i] != ' ' && isdigit(comando[i]) > 0; i++, w++) {
+        group_ID[w] = comando[i];
   }
-  if (strlen(user_UID) != 5) {
-      printf("Erro no UID, tem que ser 5 digitos\n");
-      exit(1);
+
+  if( strlen(group_ID) != 2){
+    printf("Erro no group ID, tem que ser tamanho 2 e numerico\n");
+    return  "";
   }
-  else{
-    return user_UID;
-  }
-  return user_UID; //nunca vem aqui
+
+  return group_ID;
 }
 
-/******* Validar Password *******/
-char* validarPassword(int i, char *comando, char *password){
-  for (int k = 0; comando[i] != ' ' && comando[i] !='\n' && comando[i] !='\0';i++, k++) {
-      if (isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0){ //isalnum() estava a dar erro
-          password[k] = comando[i];
-      }
-      else {
-          printf("Erro na password, tem que ser alphanumerico\n");
-          exit(1);
-      }
-  }
-  if (strlen(password) != 8) {
-      printf("Erro na password, tem que ser 8 digitos\n");
-      exit(1);
-  }
-  else{
-    return password;
-  }
-  return password; //nunca vem aqui
+
+/******* Indica o status de Login/Logout *******/
+bool checkUserLogStatus(){
+  return userLogStatus;
 }
+
 
 
 
 
 
 int main (int argc, char *argv[]) {
-    char address[MAX_IP];
+
+    char address[MAX_IP] = "127.0.0.1";
     char port[MAX_PORT] = "58021";
 
     /******* Validar input inicial do utilizador *******/
     if (argc == 3) {
         if (strcmp(argv[1],"-n") == 0) { // IP
             strcpy(address,argv[2]);
-        } else if (strcmp(argv[1],"-p") == 0 && validarPort(argv[2])) { // Port
+        }
+        else if (strcmp(argv[1],"-p") == 0 && validarPort(argv[2])) { // Port
             strcpy(port,argv[2]);
-        } else {
+        }
+        else {
             printf("Input errado\n");
             exit(1);
         }
@@ -99,10 +206,12 @@ int main (int argc, char *argv[]) {
         if (strcmp(argv[1],"-n") == 0 && strcmp(argv[3],"-p") == 0 && validarPort(argv[4])) {
             strcpy(address,argv[2]);
             strcpy(port,argv[4]);
-        } else if (strcmp(argv[1],"-p") == 0 && validarPort(argv[2]) && strcmp(argv[3],"-n") == 0) {
+        }
+        else if (strcmp(argv[1],"-p") == 0 && validarPort(argv[2]) && strcmp(argv[3],"-n") == 0) {
             strcpy(port,argv[2]);
             strcpy(address,argv[4]);
-        } else {
+        }
+        else {
             printf("Input errado\n");
             exit(1);
         }
@@ -111,7 +220,6 @@ int main (int argc, char *argv[]) {
         printf("Input errado\n");
         exit(1);
     }
-		//printf("ip: %s || port: %s\n", address, port);  //APAGAR FUTURO
 
 
     /******* Inicializar conexao UDP *******/
@@ -128,271 +236,409 @@ int main (int argc, char *argv[]) {
     hints.ai_family=AF_INET;            //IPv4
     hints.ai_socktype=SOCK_DGRAM;       //UDP socket
 
-    //errcode=getaddrinfo("tejo.tecnico.ulisboa.pt","58011",&hints,&res); //APAGAR FUTURO
     errcode=getaddrinfo(address,port,&hints,&res);
     if(errcode!=0) {
         printf("Falha na verificação do IP\n");
         exit(1); //error
     }
 
-		//FILE *fp;
 
 
     /******* Ciclo que fica à espera dos comandos do utilizador *******/
     while (1) {
+
         char comando[MAX_COMANDO] = "";  //input do user
-        char tarefa[MAX_TAREFA] = "";  //tarefa a executar
         char message_sent[MAX_TEXTO] = "";  //mensagem enviada ao server
-        char message_received[MAX_TEXTO] = "";  //mensagem recebida pelo server
-        char user_UID[MAX_UID] = "";
-        char password[MAX_PASSWORD] = "";
+        char message_received[MAX_GROUPDISPLAY] = "";  //mensagem recebida do server
+        char tarefa[MAX_TAREFA] = "";  //tarefa a executar
+        char tarefa_res[MAX_TAREFA] = ""; // tarefa respondida pelo server
 
-				/* opening file for reading */
-			  /*fp = fopen("file.txt" , "r");
-			  if(fp == NULL) {
-			     perror("Error opening file");
-			     return(-1);
-			  }*/
+        if(checkUserLogStatus())
+          printf("\n>>"); //loged in
+        else
+          printf("\n>"); //loged out
 
-        printf("\n>");
         fgets(comando,MAX_COMANDO,stdin);
-        //fgets(comando,MAX_COMANDO,fp);
-        //fclose(fp);
 
-        // le o tipo de tarefa que e para fazer
-        int i = 0;
-        for (i; comando[i] != ' ';i++) {
-            tarefa[i] = comando[i];
+        // cria a mensagem para enviar ao server
+        strcpy(message_sent, createMessage(comando, message_sent));
+
+        // verifica se é para encerrar o User
+        if (!strcmp(message_sent,"exit\n")) {
+          freeaddrinfo(res);
+          close(fd);
+          exit(1);
         }
-        int msg = 3; // comeca no 0, logo 3 letras da tarefa + 1
+
+        // le o tipo de tarefa da mensagem
+        int t = 0;
+        for (t; isalpha(message_sent[t]) != 0; t++) {
+            tarefa[t] = message_sent[t];
+        }
+
+        // Verifica se tarefa é select
+        if (!strcmp(tarefa,"SAG")){
+          if (checkUserLogStatus()){
+            strcpy(activeGroup, validarGroup_ID( t+1, message_sent, activeGroup));
+            if(strcmp(activeGroup,"") == 0)
+              continue;
+            printf("Group %s selected\n", activeGroup );
+            continue;
+          }
+          else{
+            printf("Select failed\n");
+            continue;
+          }
+        }
+
+        // comunicacao com o server em UDP
+        n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
+        if(n==-1) exit(1); //error
+
+        addrlen=sizeof(addr);
+        n=recvfrom(fd,message_received,MAX_GROUPDISPLAY,0,(struct sockaddr*)&addr,&addrlen);
+        if(n==-1) exit(1); //error
+
+        // le o tipo de tarefa que o server respondeu
+        int k = 0;
+        for (; isalpha(message_received[k]) != 0; k++) {
+            tarefa_res[k] = message_received[k];
+        }
 
 
-        /* ----------------------------------------*/
-        /*        Tarefa: registar utilizador      */
-        /*        mensagem: >REG UID pass          */
-        /* ----------------------------------------*/
+        /* ----------------------------------------- */
+        /*        Tarefa: registar utilizador        */
+        /*        comando: >REG UID pass             */
+        /*        resposta: >RRG status              */
+        /* ----------------------------------------- */
 
-        if (!strcmp(tarefa,"reg")){
 
-            strcpy(message_sent,"REG"); //adicionar tarefa em maiusculas a mensagem
-            message_sent[msg] = ' '; //adicionar espaço a mensagem
+        if (strcmp(tarefa_res, "RRG") == 0) {
 
-            //Verificar o UID
-            strcpy(user_UID, validarUser_UID( i+1, comando, user_UID));
-            i=i+6, msg=msg+6; // 5 carateres do UID + 1
-            strcat(message_sent,user_UID); //adicionar UID a mensagem
-            message_sent[msg] = ' '; //adicionar espaço a mensagem
+            char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
 
-            //Verificar a password
-            strcpy(password, validarPassword( i+1, comando, password));
-            i=i+9, msg=msg+9; // 8 carateres da password + 1
-            strcat(message_sent,password); //adicionar password a mensagem
-            message_sent[msg] = comando[i]; //adiciona o '\n' no final da mensagem
-
-            //printf("uid: %s | pass: %s | message_sent: %s\n",user_UID, password, message_sent); //APAGAR FUTURO
-
-            // comunicacao com o server
-            n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
-            if(n==-1) exit(1); //error
-
-            addrlen=sizeof(addr);
-            n=recvfrom(fd,message_received,128,0,(struct sockaddr*)&addr,&addrlen);
-            if(n==-1) exit(1); //error
-
-            //Verificar resposta do servidor
-            if (strcmp(message_received, "RRG OK\n") == 0) {
-              printf("\nUser successfully registed\n");
+            // Tipo de status da tarefa que o server respondeu
+            k++;
+            for (int w = 0;  isalpha(message_received[k]) != 0; k++, w++) {
+                status_res[w] = message_received[k];
             }
-            else if(strcmp(message_received, "RRG DUP\n") == 0) {
-              printf("\nUser already registed\n");
+
+            // Verificar status da resposta do servidor
+            if (strcmp(status_res, "OK") == 0){
+              printf("User successfully registed\n");
             }
-            else if(strcmp(message_received, "RRG NOK\n") == 0){
-              printf("\nError on server side\n");
+            else if(strcmp(status_res, "DUP") == 0) {
+              printf("User already registed\n");
+            }
+            else if(strcmp(status_res, "NOK") == 0){
+              printf("Registation failed\n");
             }
             else{
-              printf("\nnao devia vir aqui: %s\n", message_sent);
+              printf("Erro nas Mensagens do Protocolo\n");
             }
 
         }
 
 
-        /* ----------------------------------------*/
-        /*        Tarefa: Apagar utilizador        */
-        /*        mensagem: >UNR UID pass          */
-        /* ----------------------------------------*/
+        /* ----------------------------------------- */
+        /*        Tarefa: Apagar utilizador          */
+        /*        comando: >UNR UID pass             */
+        /*        resposta: >RUN status              */
+        /* ----------------------------------------- */
 
-        else if (!strcmp(tarefa,"unregister") || !strcmp(tarefa,"unr")) {
+        else if (strcmp(tarefa_res, "RUN") == 0) {
 
-          strcpy(message_sent,"UNR"); //adicionar tarefa em maiusculas a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
 
-          //Verificar o UID
-          strcpy(user_UID, validarUser_UID( i+1, comando, user_UID));
-          i=i+6, msg=msg+6; // 5 carateres do UID + 1
-          strcat(message_sent,user_UID); //adicionar UID a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
-
-          //Verificar a password
-          strcpy(password, validarPassword( i+1, comando, password));
-          i=i+9, msg=msg+9; // 8 carateres da password + 1
-          strcat(message_sent,password); //adicionar password a mensagem
-          message_sent[msg] = comando[i]; //adiciona o '\n' no final da mensagem
-
-          //printf("uid: %s | pass: %s | message_sent: %s\n",user_UID, password, message_sent); //APAGAR FUTURO
-
-          // comunicacao com o server
-          n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
-          if(n==-1) exit(1); //error
-
-          addrlen=sizeof(addr);
-          n=recvfrom(fd,message_received,128,0,(struct sockaddr*)&addr,&addrlen);
-          if(n==-1) exit(1); //error
-
-          //Verificar resposta do servidor
-          if (strcmp(message_received, "RUN OK\n") == 0) {
-            printf("\nUser successfully deleted\n");
+          // le o tipo de status da tarefa que o server respondeu
+          k++;
+          for (int w = 0; isalpha(message_received[k]) != 0; k++, w++) {
+              status_res[w] = message_received[k];
           }
-          else if(strcmp(message_received, "RUN NOK\n") == 0) {
-            printf("\nIncorrect user ID or password\n");
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            printf("User successfully unregisted\n");
+          }
+          else if(strcmp(status_res, "NOK") == 0){
+            printf("Unregistation failed\n");
           }
           else{
-            printf("\nnao devia vir aqui: %s\n", message_sent);
+            printf("Erro nas Mensagens do Protocolo\n");
           }
 
         }
 
 
-        /* ----------------------------------------*/
-        /*        Tarefa: login                    */
-        /*        mensagem: >LOG UID pass          */
-        /* ----------------------------------------*/
+        /* ----------------------------------------- */
+        /*        Tarefa: login                      */
+        /*        comando: >LOG UID pass             */
+        /*        resposta: >RLO status              */
+        /* ----------------------------------------- */
 
-        else if (!strcmp(tarefa,"login")){
+        else if (strcmp(tarefa_res, "RLO") == 0) {
 
-          strcpy(message_sent,"LOG"); //adicionar tarefa em maiusculas a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
 
-          //Verificar o UID
-          strcpy(user_UID, validarUser_UID( i+1, comando, user_UID));
-          i=i+6, msg=msg+6; // 5 carateres do UID + 1
-          strcat(message_sent,user_UID); //adicionar UID a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
-
-          //Verificar a password
-          strcpy(password, validarPassword( i+1, comando, password));
-          i=i+9, msg=msg+9; // 8 carateres da password + 1
-          strcat(message_sent,password); //adicionar password a mensagem
-          message_sent[msg] = comando[i]; //adiciona o '\n' no final da mensagem
-
-          //printf("uid: %s | pass: %s | message_sent: %s\n",user_UID, password, message_sent); //APAGAR FUTURO
-
-          // comunicacao com o server
-          n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
-          if(n==-1) exit(1); //error
-
-          addrlen=sizeof(addr);
-          n=recvfrom(fd,message_received,128,0,(struct sockaddr*)&addr,&addrlen);
-          if(n==-1) exit(1); //error
-
-          //Verificar resposta do servidor
-          if (strcmp(message_received, "RLO OK\n") == 0) {
-            printf("\nYou are now Logged in\n");
+          // le o tipo de status da tarefa que o server respondeu
+          k++;
+          for (int w = 0; isalpha(message_received[k]) != 0; k++, w++) {
+              status_res[w] = message_received[k];
           }
-          else if(strcmp(message_received, "RLO NOK\n") == 0){
-            printf("\nIncorrect user ID or password or Error on server\n");
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            printf("You are now Logged in\n");
+            userLogStatus = true;
+            t++;
+            for (int i = 0; isdigit(message_sent[t]) > 0; i++, t++){
+              userLogID[i] = message_sent[t];
+            }
+          }
+          else if(strcmp(status_res, "NOK") == 0){
+            printf("Login failed\n");
+            strcpy(userLogID,"");
           }
           else{
-            printf("\nnao devia vir aqui: %s\n", message_sent);
+            printf("Erro nas Mensagens do Protocolo\n");
+            strcpy(userLogID,"");
           }
 
         }
 
 
-        /* ----------------------------------------*/
-        /*        Tarefa: logout                   */
-        /*        mensagem: >OUT UID pass          */
-        /* ----------------------------------------*/
+        /* ----------------------------------------- */
+        /*        Tarefa: logout                     */
+        /*        comando: >OUT UID pass             */
+        /*        resposta: >ROU status              */
+        /* ----------------------------------------- */
 
-        else if (!strcmp(tarefa,"logout")){
+        else if (strcmp(tarefa_res, "ROU") == 0) {
 
-          strcpy(message_sent,"OUT"); //adicionar tarefa em maiusculas a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
 
-          //Verificar o UID
-          strcpy(user_UID, validarUser_UID( i+1, comando, user_UID));
-          i=i+6, msg=msg+6; // 5 carateres do UID + 1
-          strcat(message_sent,user_UID); //adicionar UID a mensagem
-          message_sent[msg] = ' '; //adicionar espaço a mensagem
-
-          //Verificar a password
-          strcpy(password, validarPassword( i+1, comando, password));
-          i=i+9, msg=msg+9; // 8 carateres da password + 1
-          strcat(message_sent,password); //adicionar password a mensagem
-          message_sent[msg] = comando[i]; //adiciona o '\n' no final da mensagem
-
-          //printf("uid: %s | pass: %s | message_sent: %s\n",user_UID, password, message_sent); //APAGAR FUTURO
-
-          // comunicacao com o server
-          n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
-          if(n==-1) exit(1); //error
-
-          addrlen=sizeof(addr);
-          n=recvfrom(fd,message_received,128,0,(struct sockaddr*)&addr,&addrlen);
-          if(n==-1) exit(1); //error
-
-          //Verificar resposta do servidor
-          if (strcmp(message_received, "ROU OK\n") == 0) {
-            printf("\nYou are now Logged out\n");
+          // Le o tipo de status da tarefa que o server respondeu
+          k++;
+          for (int w = 0; message_received[k] != '\n' || isalpha(message_received[k]) != 0; k++, w++) {
+              status_res[w] = message_received[k];
           }
-          else if(strcmp(message_received, "ROU NOK\n") == 0){
-            printf("\nIncorrect user ID or password or Error on server\n");
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            printf("You are now Logged out\n");
+            userLogStatus = false;
+            strcpy(userLogID,"");
+          }
+          else if(strcmp(status_res, "NOK") == 0){
+            printf("Logout failed\n");
           }
           else{
-            printf("\nnao devia vir aqui: %s\n", message_sent);
+            printf("Erro nas Mensagens do Protocolo\n");
+          }
+
+        }
+
+
+        /* ----------------------------------------- */
+        /*        Tarefa: groups                     */
+        /*        comando: >GLS                      */
+        /*        resposta: >RGL N[ GID GName MID]*  */
+        /* ----------------------------------------- */
+
+        else if (strcmp(tarefa_res, "RGL") == 0) {
+
+          char num_groups[MAX_GROUPID + 1] = ""; // numero de grupos respondido pelo server
+          char groups_list[MAX_GROUPDISPLAY] = ""; // lista de grupos
+
+          // le quantos grupos o server respondeu
+          k++;
+          for (int w = 0; isdigit(message_received[k]) > 0 ; k++, w++) {
+              num_groups[w] = message_received[k];
+          }
+
+          //Verificar numero de grupos da resposta do servidor
+          if (0 < atoi(num_groups) < 100){ // existe grupos
+
+            //Verificar se lista de grupos cumpre Protocolo
+            k++;
+            strcpy(groups_list,validarListaGrupos(k, message_received, groups_list));
+            if(strcmp(groups_list, "") == 0)
+              printf("Erro na Lista de Grupos\n");
+            else
+              printf("Grupos:\n%s", groups_list);
+          }
+          else if (strcmp(num_groups,"0")){
+            printf("No groups available\n");
+          }
+          else{
+            printf("Erro nas Mensagens do Protocolo\n");
           }
 
         }
 
 
 
-        else if (!strcmp(tarefa,"groups") || !strcmp(tarefa,"gl")){ //groups
+        /******* Apenas depois do login ********/
+
+
+        /* ----------------------------------------- */
+        /*        Tarefa: subscribe                  */
+        /*        comando: >GSR UID GID GName        */
+        /*        resposta: >RGS status              */
+        /* ----------------------------------------- */
+
+        else if (strcmp(tarefa_res, "RGS") == 0) {
+
+          char group_ID_res[MAX_GROUPID + 1] = "";
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
+
+          // le o tipo de status da tarefa que o server respondeu
+          k++;
+          for (int w = 0; isalpha(message_received[k]) != 0 || message_received[k] == '_'; k++, w++) {
+              status_res[w] = message_received[k];
+          }
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            printf("Group subscribed\n");
+          }
+          else if (strcmp(status_res, "NEW") == 0){
+
+            //Verificar a group ID recebido
+            strcpy(group_ID_res, validarGroup_ID( k+1, message_received, group_ID_res));
+            if(strcmp(group_ID_res,"") == 0){
+              printf("Erro no group ID devolvido pelo Server\n");
+            }
+            else{
+              printf("Group %s created and subscribed\n", group_ID_res);
+            }
+          }
+          else if (strcmp(status_res, "E_USR") == 0){
+            printf("Invalid user ID\n");
+          }
+          else if (strcmp(status_res, "E_GRP") == 0){
+            printf("Invalid group ID\n");
+          }
+          else if (strcmp(status_res, "E_GNAME") == 0){
+            printf("Invalid group Name\n");
+          }
+          else if (strcmp(status_res, "E_FULL") == 0){
+            printf("No more space to create groups\n");
+          }
+          else if (strcmp(status_res, "NOK") == 0){
+            printf("Group subscribed failed\n");
+          }
+          else{
+            printf("Erro nas Mensagens do Protocolo\n");
+          }
 
         }
-        //Apenas depois do login
-        else if (!strcmp(tarefa,"subscribe") || !strcmp(tarefa,"s")){ //subscribe GID GName
+
+
+        /* ----------------------------------------- */
+        /*        Tarefa: unsubscribe                */
+        /*        comando: >GUR UID GID              */
+        /*        resposta: >RGU status              */
+        /* ----------------------------------------- */
+
+
+        else if (strcmp(tarefa_res, "RGU") == 0) {
+
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
+
+          // le o tipo de status da tarefa que o server respondeu
+          k++;
+          for (int w = 0; isalpha(message_received[k]) != 0 || message_received[k] == '_'; k++, w++) {
+              status_res[w] = message_received[k];
+          }
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            printf("Group unsubscribed\n");
+          }
+          else if (strcmp(status_res, "E_USR") == 0){
+            printf("Invalid user ID\n");
+          }
+          else if (strcmp(status_res, "E_GRP") == 0){
+            printf("Invalid group ID\n");
+          }
+          else if (strcmp(status_res, "NOK") == 0){
+            printf("Group unsubscribed failed\n");
+          }
+          else{
+            printf("Erro nas Mensagens do Protocolo\n");
+          }
 
         }
-        else if (!strcmp(tarefa,"unsubscribe") || !strcmp(tarefa,"u")){ //unsubscribe GID
+
+
+        /* ----------------------------------------- */
+        /*        Tarefa: my groups                  */
+        /*        comando: >GLM UID                  */
+        /*        resposta: >RGM N[ GID GName MID]*  */
+        /* ----------------------------------------- */
+
+        else if (strcmp(tarefa_res, "RGM") == 0) {
+
+          char num_groups[MAX_GROUPID + 1] = ""; // numero de grupos respondido pelo server
+          char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
+          char groups_list[MAX_GROUPDISPLAY] = ""; // lista de grupos
+
+
+          // le quantos grupos o server respondeu ou status
+          k++;
+          for (int w = 0; isdigit(message_received[k]) > 0 ||  isalpha(message_received[k]) != 0; k++, w++) {
+              if(isdigit(message_received[k]) > 0)
+                num_groups[w] = message_received[k];
+              if(isalpha(message_received[k]) != 0)
+                status_res[w] = message_received[k];
+          }
+
+          //Verificar numero de grupos da resposta do servidor
+          if (0 < atoi(num_groups) < 100){ // existe grupos
+
+            //Verificar se lista de grupos cumpre Protocolo
+            k++;
+            strcpy(groups_list,validarListaGrupos(k, message_received, groups_list));
+            if(strcmp(groups_list, "") == 0)
+              printf("Erro na Lista de Grupos\n");
+            else
+              printf("Grupos:\n%s", groups_list);
+
+          }
+          else if (strcmp(num_groups, "0")){
+            printf("No groups subscribed\n");
+          }
+          else if (strcmp(status_res, "E_USR") == 0){
+            printf("Invalid user ID\n");
+          }
+          else{
+            printf("Erro nas Mensagens do Protocolo\n");
+          }
 
         }
-        else if (!strcmp(tarefa,"my_groups") || !strcmp(tarefa,"mgl")){ //my_groups
 
-        }
-        else if (!strcmp(tarefa,"select") || !strcmp(tarefa,"sag")){ //select GID
 
-        }
+
         //TCP server
-        else if (!strcmp(tarefa,"ulist") || !strcmp(tarefa,"ul")){ //ulist
+        else if (strcmp(tarefa_res, "ULS") == 0){ //ulist
 
-        }
-        //message commands
-        else if (!strcmp(tarefa,"post")){ //post “text” [Fname]
-
-        }
-        else if (!strcmp(tarefa,"retrieve") || !strcmp(tarefa,"r")){ //retrieve MID
-
-        }
-        else if (!strcmp(tarefa,"exit")) { //exit
-            break;
-        }
-        else {
-          printf("Comando não suportado! Tente novamente!\n");
-          continue;
         }
 
 
+        else if (strcmp(tarefa_res, "PST") == 0){ //post “text” [Fname]
+
+        }
+
+
+        else if (strcmp(tarefa_res, "RTV") == 0){ //retrieve MID
+
+        }
+
+
+        else if (!strcmp(tarefa_res,"ERR")) {
+          printf("\nErro no Protocolo\n");
+        }
     }
-
-    freeaddrinfo(res);
-    close(fd);
+    return 0;
 }
