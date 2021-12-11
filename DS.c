@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <dirent.h>
 
 #define MAX_PORT 5
 #define MAX_TAREFA 20
@@ -19,32 +22,20 @@
 #define MAX_GROUPS 99 // grupo 01 ate 99
 #define MAX_GROUPNAME 24
 #define MAX_MESSAGEID 3
-#define MAX_GROUPDISPLAY 3368  //tamanho de [ GID GName MID] = 1+2+1+24+1+4 | 99*33 +1
+#define MAX_DIRECTORYNAME 19
+#define MAX_FILENAME 47 // directory + filename + .txt = 19+24+4 = 47
+
+// TAREFA + ' ' + GROUPID + ' ' = 3+1+2+1 = 7
+// GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID + ' 'ou'\n' = 2+1+24+1+4+1 = 33
+// NUMEROdeGRUPOS = 99                7+33*99 = 3274
+#define MAX_MESSAGEUDPSENT 3274
+
+// TAREFA + ' ' + USERID + ' ' + GROUPID + ' ' + GROUPNAME + '\n'= 3+1+5+1+2+1+24 = 38
+#define MAX_MESSAGEUDPRECEIVED 38
 
 
 bool verboseStatus = false; // true = vebose on , false = verbose off
 
-
-/*
-struct userInfo{
-    char userID[MAX_USERID]; // user ID
-    char password[MAX_PASSWORD]; // user password
-    char groupSub[99]; // ID of subcribed group
-		char groupAct[1]; // ID of active group
-    bool logStatus; // Logged in/out
-} allUsers[100000]; // userID -> 00000 ate 99999
-
-struct groupInfo{
-		char groupID[MAX_GROUPID]; // group ID
-		char name[MAX_GROUPNAME]  // group Name
-		struct msgInfo; // mensagens neste grupo
-} allGroups[99] //// groupID -> 01 ate 99
-
-struct msgInfo{
-		char msgID[MAX_MESSAGEID]; // message ID
-		char text[MAX_TEXTO]  // texto da mensagem
-} allMessages[9999] //// msgID -> 0001 ate 9999
-*/
 
 /******* Validar Port *******/
 bool validarPort (char* argv) {
@@ -148,7 +139,7 @@ bool checkVerboseStatus(){
 
 int main (int argc, char *argv[]) {
 
-	char port[MAX_PORT] = "58021";
+	char port[MAX_PORT] = "58021"; //port default
 
 	/******* Validar input inicial do server *******/
 	if (argc == 2) {
@@ -188,6 +179,7 @@ int main (int argc, char *argv[]) {
 			exit(1);
 	}
 
+
 	/******* Inicializar conexao UDP *******/
 	int fd,errcode;
 	ssize_t n;
@@ -210,17 +202,44 @@ int main (int argc, char *argv[]) {
 	n=bind(fd,res->ai_addr, res->ai_addrlen);
 	if(n==-1) exit(1); //error;
 
+
+/******* Criar directorias *******/
+  FILE *fp;
+
+  // Verifica se o ficheiro existe, se existir as diretorias tambem existem
+  fp = fopen("IWasHere.txt", "r");
+  if (fp == NULL) {
+    errcode = mkdir("USERS",0777);
+    if(errcode!=0) exit(1); //error
+    errcode = mkdir("GROUPS",0777);
+    if(errcode!=0) exit(1); //error
+    fp = fopen("IWasHere.txt", "w+");
+  }
+  else{
+    fclose(fp);
+  }
+
+
+
+
+  /******* Ciclo que fica à espera das mensagens dos users *******/
 	while (1){
 
 		char tarefa[MAX_TAREFA] = "";  //tarefa a executar
-		char message_received[MAX_TEXTO] = "";  //mensagem recebida do user
-		char message_sent[MAX_GROUPDISPLAY] = "";  //mensagem enviada ao user
+		char message_received[MAX_MESSAGEUDPSENT] = "";  //mensagem recebida do user
+		char message_sent[MAX_MESSAGEUDPRECEIVED] = "";  //mensagem enviada ao user
+    char dirName[MAX_DIRECTORYNAME + 1] = ""; // nome de uma diretoria
+    char fileName[MAX_FILENAME + 1] = ""; // nome de um ficheiro
 
 		// comunicacao com o user em UDP
 		addrlen=sizeof(addr);
-		n=recvfrom(fd,message_received,128,0,(struct sockaddr*)&addr,&addrlen);
+		n=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED,0,(struct sockaddr*)&addr,&addrlen);
 		if(n==-1) exit(1); //error
 
+
+    if(checkVerboseStatus()){
+      //faz coisas
+    }
 
 		// le o tipo de tarefa que e para fazer da mensagem
 		int t = 0;
@@ -244,27 +263,131 @@ int main (int argc, char *argv[]) {
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
 				strcpy(message_sent,"RRG NOK\n");
-				continue;
+				goto sendMessageToUser;
 			}
-			t=t+strlen(user_ID)+1;
+			t = t + MAX_USERID + 1;
 
 			//Verificar a password
 			strcpy(password, validarPassword( t+1, message_received, password));
 			if(strcmp(password,"") == 0){
 				strcpy(message_sent,"RRG NOK\n");
-				continue;
+				goto sendMessageToUser;
 			}
 
-			//FAZER COISAS
+      //Cria o nome da directoria
+      strcpy(dirName, "USERS/");       // USERS/
+      strcat(dirName, user_ID);        // USERS/uid
 
+      //Verifica se o user ja esta registado
+      if( access( dirName, R_OK ) == 0 ) {
+          strcpy(message_sent,"RRG DUP\n");
+          goto sendMessageToUser;
+      }
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
+
+      //Cria a directoria
+      errcode = mkdir(dirName,0777);
+      if(errcode!=0) exit(1); //error
+
+      //Cria o ficheiro e escreve a password
+			fp = fopen(fileName, "w+");
+      fputs(password, fp);
+      fclose(fp);
 
 			if(checkVerboseStatus()){
-				printf("User %s registed\n", user_ID);
+				printf("\nUser %s registed\n", user_ID);
+        //printf("%s\n", verbose);
 			}
 			strcpy(message_sent,"RRG OK\n");
 		}
 
+
+    /* ----------------------------------------- */
+    /*        Tarefa: Apagar utilizador          */
+    /*        recebide: >UNR UID pass            */
+    /*        envia: >RUN status                 */
+    /* ----------------------------------------- */
+
 	  else if (!strcmp(tarefa,"UNR")){
+
+      char user_ID[MAX_USERID + 1] = "";
+			char password[MAX_PASSWORD + 1] = "";
+      char passwordFile[MAX_PASSWORD + 1] = "";
+      char fileNameEND[MAX_PASSWORD + 1] = ""; // diretoria vazia = USERS/uid/.
+
+			//Verificar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"RUN NOK\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_USERID + 1;
+
+			//Verificar a password
+			strcpy(password, validarPassword( t+1, message_received, password));
+			if(strcmp(password,"") == 0){
+				strcpy(message_sent,"RUN NOK\n");
+				goto sendMessageToUser;
+			}
+
+      //Cria o nome da directoria
+      strcpy(dirName, "USERS/");       // USERS/
+      strcat(dirName, user_ID);        // USERS/uid
+
+      //Verifica se o user ja esta registado
+      if( access( dirName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RUN NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
+
+      //Comparar as passwords
+      fp = fopen(fileName, "r");
+      for(int i = 0; i < MAX_PASSWORD; i++)
+        passwordFile[i] = fgetc( fp );
+      fclose(fp);
+
+      if (strcmp(password,passwordFile) != 0){
+          strcpy(message_sent,"RUN NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Apaga coisas dentro da diretoria
+      DIR *theFolder = opendir(dirName);
+      struct dirent *next_file;
+      char filepath[50];
+      strcpy(fileNameEND, dirName);     // USERS/uid
+      strcat(fileNameEND, "/.");        // USERS/uid/.
+
+      while ( (next_file = readdir(theFolder)) != NULL ){
+          // cria o caminho para cada ficheiro
+          sprintf(filepath, "%s/%s", dirName, next_file->d_name);
+          if(strcmp(filepath, fileNameEND) == 0)
+            break;
+          errcode = remove(filepath);
+          if(errcode!=0) exit(1); //error
+      }
+      closedir(theFolder);
+
+      //Apaga a directoria
+      errcode = rmdir(dirName);
+      if(errcode!=0) exit(1); //error
+
+			if(checkVerboseStatus()){
+				printf("\nUser %s unregisted\n", user_ID);
+        //printf("%s\n", verbose);
+			}
+			strcpy(message_sent,"RUN OK\n");
 
 		}
 
@@ -307,10 +430,13 @@ int main (int argc, char *argv[]) {
 	  else
 	    strcpy(message_sent,"ERR");
 
+    sendMessageToUser:
+
 		n=sendto(fd,message_sent,strlen(message_sent),0,(struct sockaddr*)&addr,addrlen);
 		if(n==-1 )exit(1); //error
 
 	}
+
 	freeaddrinfo(res);
 	close(fd);
 	return 0;

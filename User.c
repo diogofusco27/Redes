@@ -11,15 +11,26 @@
 #include <ctype.h>
 
 #define MAX_COMANDO 500
-#define MAX_TAREFA 20
+#define MAX_TAREFA 7
 #define MAX_STATUS 5
 #define MAX_TEXTO 240
 #define MAX_USERID 5
 #define MAX_IP 30
 #define MAX_PORT 5
-#define MAX_GROUPID 2 //maximo é 99 grupos
+#define MAX_GROUPID 2 // 99 grupos
 #define MAX_MESSAGEID 3
-#define MAX_GROUPDISPLAY 3368  //tamanho de [ GID GName MID] = 1+2+1+24+1+4 | 99*33 +1
+
+// GROUPID + ' - ' + GROUPNAME + ' ' + MESSAGEID + '\n' = 2+3+24+1+4+1 = 35
+// NUMEROdeGRUPOS = 99               35*99 = 3465
+#define MAX_GROUPDISPLAY 3465
+
+// TAREFA + ' ' + GROUPID + ' ' = 3+1+2+1 = 7
+// GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID + ' 'ou'\n' = 2+1+24+1+4+1 = 33
+// NUMEROdeGRUPOS = 99                7+33*99 = 3274
+#define MAX_MESSAGEUDPRECEIVED 3274
+
+// TAREFA + ' ' + USERID + ' ' + GROUPID + ' ' + GROUPNAME + '\n'= 3+1+5+1+2+1+24 = 38
+#define MAX_MESSAGEUDPSENT 38
 
 
 bool userLogStatus = false; // true = login , false = logout
@@ -44,6 +55,13 @@ bool validarPort (char* argv) {
   return false;
 }
 
+
+/******* Indica o status de Login/Logout *******/
+bool checkUserLogStatus(){
+  return userLogStatus;
+}
+
+
 /******* Cria a mensagem que vai ser enviada ao server *******/
 char* createMessage(char *comando, char *message){
 
@@ -66,6 +84,14 @@ char* createMessage(char *comando, char *message){
     strcpy(message,"OUT");
   else if (!strcmp(tarefa,"groups") || !strcmp(tarefa,"gl"))
     strcpy(message,"GLS");
+  else if (!strcmp(tarefa,"exit")){
+    strcpy(message,"EXT");
+    return message;
+  }
+  else if (checkUserLogStatus() == false){
+    strcpy(message,"OFF");
+    return message;
+  }
   else if (!strcmp(tarefa,"subscribe") || !strcmp(tarefa,"s"))
     strcpy(message,"GSR");
   else if (!strcmp(tarefa,"unsubscribe") || !strcmp(tarefa,"u"))
@@ -80,7 +106,7 @@ char* createMessage(char *comando, char *message){
     strcpy(message,"PST");
   else if (!strcmp(tarefa,"retrieve") || !strcmp(tarefa,"r"))
     strcpy(message,"RTV");
-  else // inclui se a tarefa for 'exit'
+  else
     return comando;
 
   int k = 3;
@@ -117,8 +143,11 @@ char* validarListaGrupos(int k, char *message_received, char* groups_list){
 
     strcat(groups_list, list_aux);
     groups_list[i] = ' '; //adiciona espaço
+    groups_list[i + 1] = '-'; //adiciona '-'
+    groups_list[i + 2] = ' '; //adiciona espaço
     strcpy(list_aux,"");
-    k++, i++;
+    k++;
+    i = i + 3;
 
 
     //PARTE 2
@@ -153,6 +182,7 @@ char* validarListaGrupos(int k, char *message_received, char* groups_list){
     if(message_received[k] == '\n'){
       return groups_list;
     }
+
     k++, i++;
   }
 
@@ -174,9 +204,39 @@ char* validarGroup_ID(int i, char* comando, char* group_ID){
 }
 
 
-/******* Indica o status de Login/Logout *******/
-bool checkUserLogStatus(){
-  return userLogStatus;
+bool inspecionarMensagem(char* message_sent){
+
+  char tarefa[MAX_TAREFA] = "";  //tarefa a executar
+
+  // le o tipo de tarefa da mensagem
+  int t = 0;
+  for (t; isalpha(message_sent[t]) != 0; t++) {
+      tarefa[t] = message_sent[t];
+  }
+
+  // verifica se o user tentou executar uma tarefa que necessita de login sem estar logged in
+  if (!strcmp(tarefa,"OFF")) {
+    printf("User is not logged in\n");
+    return true;
+  }
+
+  // Verifica se tarefa é select
+  if (!strcmp(tarefa,"SAG")){
+    if (checkUserLogStatus()){
+      strcpy(activeGroup, validarGroup_ID( t+1, message_sent, activeGroup));
+      if(strcmp(activeGroup,"") == 0)
+        return true;
+      printf("Group %s selected\n", activeGroup );
+      return true;
+    }
+    else{
+      printf("Select failed\n");
+      return true;
+    }
+  }
+
+  return false;
+
 }
 
 
@@ -186,8 +246,8 @@ bool checkUserLogStatus(){
 
 int main (int argc, char *argv[]) {
 
-    char address[MAX_IP] = "127.0.0.1";
-    char port[MAX_PORT] = "58021";
+    char address[MAX_IP] = "127.0.0.1"; // IP default
+    char port[MAX_PORT] = "58021"; // port default
 
     /******* Validar input inicial do utilizador *******/
     if (argc == 3) {
@@ -243,20 +303,18 @@ int main (int argc, char *argv[]) {
     }
 
 
-
     /******* Ciclo que fica à espera dos comandos do utilizador *******/
     while (1) {
 
         char comando[MAX_COMANDO] = "";  //input do user
-        char message_sent[MAX_TEXTO] = "";  //mensagem enviada ao server
-        char message_received[MAX_GROUPDISPLAY] = "";  //mensagem recebida do server
-        char tarefa[MAX_TAREFA] = "";  //tarefa a executar
-        char tarefa_res[MAX_TAREFA] = ""; // tarefa respondida pelo server
+        char message_sent[MAX_MESSAGEUDPSENT + 1] = "";  //mensagem enviada ao server
+        char message_received[MAX_MESSAGEUDPRECEIVED + 1] = "";  //mensagem recebida do server
+        char tarefa_res[MAX_TAREFA] = ""; //tarefa respondida pelo server
 
         if(checkUserLogStatus())
-          printf("\n>>"); //loged in
+          printf("\n>>"); //logged in
         else
-          printf("\n>"); //loged out
+          printf("\n>"); //logged out
 
         fgets(comando,MAX_COMANDO,stdin);
 
@@ -264,31 +322,15 @@ int main (int argc, char *argv[]) {
         strcpy(message_sent, createMessage(comando, message_sent));
 
         // verifica se é para encerrar o User
-        if (!strcmp(message_sent,"exit\n")) {
+        if (!strcmp(message_sent,"EXT")) {
           freeaddrinfo(res);
           close(fd);
           exit(1);
         }
 
-        // le o tipo de tarefa da mensagem
-        int t = 0;
-        for (t; isalpha(message_sent[t]) != 0; t++) {
-            tarefa[t] = message_sent[t];
-        }
-
-        // Verifica se tarefa é select
-        if (!strcmp(tarefa,"SAG")){
-          if (checkUserLogStatus()){
-            strcpy(activeGroup, validarGroup_ID( t+1, message_sent, activeGroup));
-            if(strcmp(activeGroup,"") == 0)
-              continue;
-            printf("Group %s selected\n", activeGroup );
-            continue;
-          }
-          else{
-            printf("Select failed\n");
-            continue;
-          }
+        // Verifica se é necessario enviar a mensagem ao server
+        if (inspecionarMensagem(message_sent)){
+          continue;
         }
 
         // comunicacao com o server em UDP
@@ -296,11 +338,15 @@ int main (int argc, char *argv[]) {
         if(n==-1) exit(1); //error
 
         addrlen=sizeof(addr);
-        n=recvfrom(fd,message_received,MAX_GROUPDISPLAY,0,(struct sockaddr*)&addr,&addrlen);
+        n=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED + 1,0,(struct sockaddr*)&addr,&addrlen);
         if(n==-1) exit(1); //error
 
-        // le o tipo de tarefa que o server respondeu
+        // Variavel 't' = indica a posiçao de leitura na mensagem enviada pelo user
+        // Variavel 'k' = indica a posiçao de leitura na mensagem recebida do server
+        int t = 4; // 4 = inicio da palavra depois da tarefa
         int k = 0;
+
+        // le o tipo de tarefa que o server respondeu
         for (; isalpha(message_received[k]) != 0; k++) {
             tarefa_res[k] = message_received[k];
         }
@@ -349,6 +395,7 @@ int main (int argc, char *argv[]) {
         else if (strcmp(tarefa_res, "RUN") == 0) {
 
           char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
+          char user_ID[MAX_USERID + 1] = "";
 
           // le o tipo de status da tarefa que o server respondeu
           k++;
@@ -359,6 +406,19 @@ int main (int argc, char *argv[]) {
           //Verificar status da resposta do servidor
           if (strcmp(status_res, "OK") == 0){
             printf("User successfully unregisted\n");
+
+            //Verificar se o UID que foi apagado é o mesmo que esta logged in
+            if (checkUserLogStatus()){
+              t++;
+              for (int i = 0; isdigit(message_sent[t]) > 0; i++, t++){
+                user_ID[i] = message_sent[t];
+              }
+              if (strcmp(userLogID, user_ID)){
+                strcpy(userLogID, "");
+                strcpy(activeGroup, "");
+                userLogStatus = false;
+              }
+            }
           }
           else if(strcmp(status_res, "NOK") == 0){
             printf("Unregistation failed\n");
@@ -390,6 +450,7 @@ int main (int argc, char *argv[]) {
           if (strcmp(status_res, "OK") == 0){
             printf("You are now Logged in\n");
             userLogStatus = true;
+            strcpy(activeGroup,"");
             t++;
             for (int i = 0; isdigit(message_sent[t]) > 0; i++, t++){
               userLogID[i] = message_sent[t];
@@ -428,6 +489,7 @@ int main (int argc, char *argv[]) {
             printf("You are now Logged out\n");
             userLogStatus = false;
             strcpy(userLogID,"");
+            strcpy(activeGroup,"");
           }
           else if(strcmp(status_res, "NOK") == 0){
             printf("Logout failed\n");
@@ -448,7 +510,7 @@ int main (int argc, char *argv[]) {
         else if (strcmp(tarefa_res, "RGL") == 0) {
 
           char num_groups[MAX_GROUPID + 1] = ""; // numero de grupos respondido pelo server
-          char groups_list[MAX_GROUPDISPLAY] = ""; // lista de grupos
+          char groups_list[MAX_GROUPDISPLAY + 1] = ""; // lista de grupos
 
           // le quantos grupos o server respondeu
           k++;
@@ -582,7 +644,7 @@ int main (int argc, char *argv[]) {
 
           char num_groups[MAX_GROUPID + 1] = ""; // numero de grupos respondido pelo server
           char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
-          char groups_list[MAX_GROUPDISPLAY] = ""; // lista de grupos
+          char groups_list[MAX_GROUPDISPLAY + 1] = ""; // lista de grupos
 
 
           // le quantos grupos o server respondeu ou status
@@ -637,7 +699,12 @@ int main (int argc, char *argv[]) {
 
 
         else if (!strcmp(tarefa_res,"ERR")) {
-          printf("\nErro no Protocolo\n");
+          printf("\nERR on server\n");
+        }
+
+        // should never come here if it's working correctly
+        else{
+          printf("\nTurn it OFF, before it explodes.\n");
         }
     }
     return 0;
