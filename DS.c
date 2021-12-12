@@ -17,21 +17,30 @@
 #define MAX_PORT 5
 #define MAX_TAREFA 3
 #define MAX_TEXTO 240
-#define MAX_USERID 5
+#define MAX_USER_ID 5
 #define MAX_PASSWORD 8
-#define MAX_GROUPID 2
+#define MAX_GROUP_ID 2
 #define MAX_GROUPS 99 // grupo 01 ate 99
-#define MAX_GROUPNAME 24
-#define MAX_MESSAGEID 3
+#define MAX_GROUP_NAME 24
+#define MAX_MESSAGE_ID 3
 #define MAX_DIRECTORY 47 // directory + filename + .txt = 19+24+4 = 47
 
 // TAREFA + ' ' + GROUPID = 3+1+2 = 6
 // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33
 // NUMEROdeGRUPOS = 99                6+33*99 = 3273 + '\n' = 3274
-#define MAX_MESSAGEUDPSENT 3274
+#define MAX_MESSAGE_UDP_SENT 3274
+
+// 'TAREFA status' = 3+1+3 = 7   [ GName[ UID]*] = 1+24+(1+5)*100000 = 600025
+//  7 + 600025 +'\n' = 600033
+#define MAX_MESSAGE_TCP_SENT 600033
+
+// 'TAREFA UID GID Tsize text [Fname Fsize data]' =
+//  3+1+5+1+2+1+3+1+240+1+[24+1+10+1+data] = 294 + data + '\n' = 295 + data
+#define MAX_MESSAGE_TCP_RECEIVED 295
 
 // TAREFA + ' ' + USERID + ' ' + GROUPID + ' ' + GROUPNAME + '\n'= 3+1+5+1+2+1+24 = 38
-#define MAX_MESSAGEUDPRECEIVED 38
+#define MAX_MESSAGE_UDP_RECEIVED 38
+
 
 char* itoa(int, char* , int);
 
@@ -113,6 +122,27 @@ char* validarGroup_Name(int i, char* comando, char* group_Name){
 }
 
 
+bool verificaPortLoginFile(char* loginFile, char* portUser){
+  char portAux[MAX_PORT + 1] = "";
+  FILE *fp;
+
+  //Vai buscar o port que foi usado para fazer login
+  fp = fopen(loginFile, "r");
+  int p, r = 0;
+  while ((p = fgetc(fp)) != EOF){
+    if(p == '\n') // quando apanha o '\n'
+      break;
+    portAux[r] = p;
+    r++;
+  }
+  fclose(fp);
+
+  if(strcmp(portUser, portAux) != 0)
+    return false;
+  return true;
+}
+
+
 /******* Indica o status de verbose *******/
 bool checkVerboseStatus(){
   return verboseStatus;
@@ -168,12 +198,11 @@ int main (int argc, char *argv[]) {
 
 
 	/******* Inicializar conexao UDP *******/
-	int fd,errcode;
+	int fd, errcode, connection_info;
 	ssize_t n;
 	socklen_t addrlen;
 	struct addrinfo hints,*res;
 	struct sockaddr_in addr;
-	char buffer[128];
 
 	fd=socket(AF_INET,SOCK_DGRAM,0); //UDP socket
 	if(fd==-1) exit(1); //error
@@ -183,8 +212,8 @@ int main (int argc, char *argv[]) {
 	hints.ai_socktype=SOCK_DGRAM; // UDP socket
 	hints.ai_flags=AI_PASSIVE;
 
-	errcode=getaddrinfo(NULL,port,&hints,&res);
-	if(errcode!=0) exit(1); //error
+	connection_info = getaddrinfo(NULL,port,&hints,&res);
+	if(connection_info!=0) exit(1); //error
 
 	n=bind(fd,res->ai_addr, res->ai_addrlen);
 	if(n==-1) exit(1); //error;
@@ -215,16 +244,23 @@ int main (int argc, char *argv[]) {
 
     bool userShutedDown = false;
 
-		char tarefa[MAX_TAREFA + 1] = "";  //tarefa a executar
-		char message_received[MAX_MESSAGEUDPRECEIVED + 1] = "";  //mensagem recebida do user
-		char message_sent[MAX_MESSAGEUDPSENT + 1] = "";  //mensagem enviada ao user
+		char tarefa[MAX_TAREFA + 1] = "";  // tarefa a executar
+		char message_received[MAX_MESSAGE_TCP_RECEIVED + 1] = "";  // mensagem recebida do user
+		char message_sent[MAX_MESSAGE_TCP_SENT + 1] = "";  // mensagem enviada ao user
     char dirName[MAX_DIRECTORY + 1] = ""; // nome de uma diretoria
-    char fileName[MAX_DIRECTORY + 1] = ""; // nome de um ficheiro
+    char fileName[MAX_DIRECTORY + 1] = ""; // nome de um ficheiro + diretoria
+    char addressUser[NI_MAXHOST]; // address da mensagem recebida
+    char portUser[NI_MAXSERV]; // port da mensagem recebida
 
 		// comunicacao com o user em UDP
 		addrlen=sizeof(addr);
-		n=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED,0,(struct sockaddr*)&addr,&addrlen);
+		n=recvfrom(fd,message_received,MAX_MESSAGE_UDP_RECEIVED,0,(struct sockaddr*)&addr,&addrlen);
 		if(n==-1) exit(1); //error
+
+    // Adquirir IP e Port da mensagem recebida
+    connection_info = getnameinfo((struct sockaddr *) &addr,
+                                  addrlen, addressUser, NI_MAXHOST,
+                                  portUser, NI_MAXSERV, NI_NUMERICSERV);
 
 		// le o tipo de tarefa que e para fazer da mensagem
 		int t = 0;
@@ -233,35 +269,16 @@ int main (int argc, char *argv[]) {
 		}
 
 
-
     /* ----------------------------------------- */
-		/*        Tarefa:                            */
-		/*        recebe: >EXT                       */
-		/*        envia: >                           */
-		/* ----------------------------------------- */
-
-    if (!strcmp(message_received,"EXT")){
-
-      if(checkVerboseStatus()){
-        printf("\nUDP connection ended\n");
-        //printf("%s\n", verbose); // ATENTION ip e port !?
-      }
-
-      strcpy(message_sent, "RIP");
-      goto sendMessageToUser;
-    }
-
-
-    /* ----------------------------------------- */
-		/*        Tarefa: logout                     */
+		/*        Tarefa: exit (logout)              */
 		/*        recebe: >EXT UID                   */
 		/*        envia: >                           */
 		/* ----------------------------------------- */
 
-    else if (!strcmp(tarefa,"EXT")){
+    if (!strcmp(tarefa,"EXT")){
 
-      char user_ID[MAX_USERID + 1] = "";
-      char forged_message[MAX_MESSAGEUDPRECEIVED + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
+      char forged_message[MAX_MESSAGE_UDP_RECEIVED + 1] = "";
       char passwordFile[MAX_PASSWORD + 1] = "";
 
       //Buscar o UID
@@ -289,15 +306,16 @@ int main (int argc, char *argv[]) {
       }
       fclose(fp);
 
-      strcpy(tarefa, "OUT");
-      strcpy(forged_message, tarefa);
-      strcat(forged_message, " ");
-      strcat(forged_message, user_ID);
-      strcat(forged_message, " ");
-      strcat(forged_message, passwordFile);
-      strcat(forged_message, "\n");
+      strcpy(tarefa, "OUT"); // tarefa passa a ser logout
 
-      strcpy(message_received, forged_message);
+      strcpy(forged_message, tarefa);        // 'OUT'
+      strcat(forged_message, " ");           // 'OUT '
+      strcat(forged_message, user_ID);       // 'OUT uid'
+      strcat(forged_message, " ");           // 'OUT uid '
+      strcat(forged_message, passwordFile);  // 'OUT uid pass'
+      strcat(forged_message, "\n");          // 'OUT uid pass\n'
+
+      strcpy(message_received, forged_message); //substitui a message_received
       userShutedDown = true;
 
     }
@@ -311,20 +329,28 @@ int main (int argc, char *argv[]) {
 
 		if (!strcmp(tarefa,"REG")){
 
-			char user_ID[MAX_USERID + 1] = "";
+			char user_ID[MAX_USER_ID + 1] = "";
 			char password[MAX_PASSWORD + 1] = "";
 
 			//Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
-			if(strcmp(user_ID,"") == 0){ // easter egg
-        printf("WATCH OUT BEHIND YOU");
-        continue;
+			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser registation failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+				strcpy(message_sent,"RRG NOK\n");
+				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
 			//Verificar a password
 			strcpy(password, validarPassword( t+1, message_received, password));
 			if(strcmp(password,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser registation failed, invalid password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RRG NOK\n");
 				goto sendMessageToUser;
 			}
@@ -335,8 +361,12 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o user ja esta registado
       if( access( dirName, R_OK ) == 0 ) {
-          strcpy(message_sent,"RRG DUP\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser registation failed, UID was already registed\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RRG DUP\n");
+        goto sendMessageToUser;
       }
 
       //Cria a directoria
@@ -356,7 +386,7 @@ int main (int argc, char *argv[]) {
 
 			if(checkVerboseStatus()){
 				printf("\nUser %s registed\n", user_ID);
-        //printf("%s\n", verbose); // ATENTION ip e port !?
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 			strcpy(message_sent,"RRG OK\n");
 		}
@@ -370,7 +400,7 @@ int main (int argc, char *argv[]) {
 
 	  else if (!strcmp(tarefa,"UNR")){
 
-      char user_ID[MAX_USERID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
 			char password[MAX_PASSWORD + 1] = "";
       char passwordFile[MAX_PASSWORD + 1] = "";
       char fileNameEND[MAX_PASSWORD + 1] = ""; // diretoria vazia = USERS/uid/.
@@ -378,14 +408,22 @@ int main (int argc, char *argv[]) {
 			//Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unregistation failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RUN NOK\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
 			//Verificar a password
 			strcpy(password, validarPassword( t+1, message_received, password));
 			if(strcmp(password,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unregistation failed, invalid password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RUN NOK\n");
 				goto sendMessageToUser;
 			}
@@ -396,8 +434,12 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o user ja esta registado
       if( access( dirName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RUN NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unregistation failed, UID was not registed\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RUN NOK\n");
+        goto sendMessageToUser;
       }
 
       //Cria o nome do ficheiro
@@ -419,8 +461,12 @@ int main (int argc, char *argv[]) {
 
       //Comparar as passwords
       if (strcmp(password,passwordFile) != 0){
-          strcpy(message_sent,"ROU NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unregistation failed, incorrect password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"ROU NOK\n");
+        goto sendMessageToUser;
       }
 
       //Apaga ficheiros dentro da diretoria
@@ -447,7 +493,7 @@ int main (int argc, char *argv[]) {
 
 			if(checkVerboseStatus()){
 				printf("\nUser %s unregisted\n", user_ID);
-        //printf("%s\n", verbose);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 			strcpy(message_sent,"RUN OK\n");
 
@@ -462,7 +508,7 @@ int main (int argc, char *argv[]) {
 
 		else if (!strcmp(tarefa,"LOG")){
 
-      char user_ID[MAX_USERID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
       char password[MAX_PASSWORD + 1] = "";
       char passwordFile[MAX_PASSWORD + 1] = "";
       char loginFile[MAX_PASSWORD + 1] = "";
@@ -470,10 +516,14 @@ int main (int argc, char *argv[]) {
       //Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser login failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RLO NOK\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
       //Cria o nome da directoria
       strcpy(dirName, "USERS/");       // USERS/
@@ -481,6 +531,10 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o user ja esta registado
       if( access( dirName, R_OK ) != 0 ) {
+        if (checkVerboseStatus() == true) {
+          printf("\nUser login failed, UID was not registed\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
           strcpy(message_sent,"RLO NOK\n");
           goto sendMessageToUser;
       }
@@ -488,6 +542,10 @@ int main (int argc, char *argv[]) {
       //Verificar a password
 			strcpy(password, validarPassword( t+1, message_received, password));
 			if(strcmp(password,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser login failed, invalid password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RLO NOK\n");
 				goto sendMessageToUser;
 			}
@@ -513,17 +571,22 @@ int main (int argc, char *argv[]) {
 
       //Comparar as passwords
       if (strcmp(password,passwordFile) != 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser login failed, incorrect password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
           strcpy(message_sent,"RLO NOK\n");
           goto sendMessageToUser;
       }
 
       //Cria o ficheiro de login
       fp = fopen(loginFile, "w+");
+      fputs(portUser,fp);
       fclose(fp);
 
       if(checkVerboseStatus()){
-				printf("\nUser %s Logged in\n", user_ID);
-        //printf("%s\n", verbose);
+				printf("\nUser %s logged in\n", user_ID);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 			strcpy(message_sent,"RLO OK\n");
 
@@ -538,32 +601,60 @@ int main (int argc, char *argv[]) {
 
 		else if (!strcmp(tarefa,"OUT")){
 
-      char user_ID[MAX_USERID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
       char password[MAX_PASSWORD + 1] = "";
       char passwordFile[MAX_PASSWORD + 1] = "";
-      char loginFile[MAX_PASSWORD + 1] = "";
+      char loginFile[MAX_DIRECTORY + 1] = "";
 
       //Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser logout failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"ROU NOK\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
       //Cria o nome da directoria
-      strcpy(dirName, "USERS/");       // USERS/
-      strcat(dirName, user_ID);        // USERS/uid
+      strcpy(dirName, "USERS/");        // USERS/
+      strcat(dirName, user_ID);         // USERS/uid
 
-      //Verifica se o user ja esta registado
-      if( access( dirName, R_OK ) != 0 ) {
-          strcpy(message_sent,"ROU NOK\n");
-          goto sendMessageToUser;
+      //Cria o nome do ficheiro
+      strcpy(loginFile, dirName);       // USERS/uid
+      strcat(loginFile, "/");           // USERS/uid/
+      strcat(loginFile, user_ID);       // USERS/uid/uid
+      strcat(loginFile, "_login.txt");  // USERS/uid/uid_login.txt
+
+      //Verifica se o user esta logged in
+      if( access( loginFile, R_OK ) != 0 ) {
+        if (checkVerboseStatus() == true) {
+          printf("\nUser logout failed, UID not logged in\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"ROU NOK\n");
+        goto sendMessageToUser;
       }
+
+      //verifica se o user esta no mesmo port que usou para fazer login
+      if(verificaPortLoginFile(loginFile, portUser) == false){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser logout failed, invalid port connection\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+				strcpy(message_sent,"ROU NOK\n");
+				goto sendMessageToUser;
+			}
 
       //Verificar a password
 			strcpy(password, validarPassword( t+1, message_received, password));
 			if(strcmp(password,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser logout failed, invalid password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"ROU NOK\n");
 				goto sendMessageToUser;
 			}
@@ -572,9 +663,7 @@ int main (int argc, char *argv[]) {
       strcpy(fileName, dirName);       // USERS/uid
       strcat(fileName, "/");           // USERS/uid/
       strcat(fileName, user_ID);       // USERS/uid/uid
-      strcpy(loginFile, fileName);     // USERS/uid/uid
       strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
-      strcat(loginFile, "_login.txt"); // USERS/uid/uid_login.txt
 
       //Buscar a password do userID
       fp = fopen(fileName, "r");
@@ -589,31 +678,26 @@ int main (int argc, char *argv[]) {
 
       //Comparar as passwords
       if (strcmp(password,passwordFile) != 0){
-          strcpy(message_sent,"ROU NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser logout failed, incorrect password\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"ROU NOK\n");
+        goto sendMessageToUser;
       }
 
-      //Verifica se o user esta logged in
-      if( access( loginFile, R_OK ) != 0 ) {
-          strcpy(message_sent,"ROU NOK\n");
-          goto sendMessageToUser;
-      }
 
       //Apaga o ficheiro login
-      errcode = remove(loginFile);
+      errcode = remove(loginFile); // Faz logout
       if(errcode!=0) exit(1); //error
 
       if(checkVerboseStatus()){
-				printf("\nUser %s Logged out\n", user_ID);
-        //printf("%s\n", verbose);
+				printf("\nUser %s logged out\n", user_ID);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 			strcpy(message_sent,"ROU OK\n");
 
       if(userShutedDown == true){
-        if(checkVerboseStatus()){
-  				printf("\nUDP connection ended and user %s Logged out\n", user_ID);
-          //printf("%s\n", verbose);
-  			}
         continue;
       }
 
@@ -632,10 +716,10 @@ int main (int argc, char *argv[]) {
       char taskInfo[7 + 1] = "";
       // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
       char groupsInfo[34 + 1] = "";
-      char groupID[MAX_GROUPID + 1] = "";
+      char groupID[MAX_GROUP_ID + 1] = "";
       char aux[1 + 1] = "";
       char groupName[MAX_DIRECTORY + 1] = "";
-      char lastMessageID[MAX_MESSAGEID + 1] = "";
+      char lastMessageID[MAX_MESSAGE_ID + 1] = "";
 
       int i = 1;
       for( i; i <= MAX_GROUPS; i++){
@@ -653,7 +737,7 @@ int main (int argc, char *argv[]) {
 
         strcat(dirName, groupID);          // GROUPS/gid
 
-        //Verifica se o grupo existe
+        //Verifica se o grupo existe, senão exisitr ja percorreu todos
         if( access( dirName, R_OK ) != 0 ) {
             break;
         }
@@ -717,7 +801,7 @@ int main (int argc, char *argv[]) {
 
       if(checkVerboseStatus()){
 				printf("\nGroups Displayed\n");
-        //printf("%s\n", verbose);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 
       strcpy(message_sent, taskInfo);       // 'RGL gid'
@@ -735,21 +819,25 @@ int main (int argc, char *argv[]) {
 
 		else if (!strcmp(tarefa,"GSR")){
 
-      char user_ID[MAX_USERID + 1] = "";
-      char group_ID[MAX_GROUPID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
+      char group_ID[MAX_GROUP_ID + 1] = "";
       char aux[1 + 1] = "";
-      char group_Name[MAX_GROUPNAME + 1] = "";
-      char lastGroupID[MAX_GROUPID + 1] = "";
+      char group_Name[MAX_GROUP_NAME + 1] = "";
+      char lastGroupID[MAX_GROUP_ID + 1] = "";
       char loginFile[MAX_PASSWORD + 1] = "";
       char fileName[MAX_DIRECTORY + 1] = "";
 
       //Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser subscription failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGS E_USR\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
       //Cria o nome do ficheiro
       strcpy(fileName, "USERS/");      // USERS/
@@ -760,21 +848,33 @@ int main (int argc, char *argv[]) {
 
       //Verificar se o user esta logged in
       if( access( fileName, F_OK ) != 0 ) {
-          strcpy(message_sent,"RGS NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser subscription failed, UID not logged in\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGS NOK\n");
+        goto sendMessageToUser;
       }
 
       //Verificar o GID
 			strcpy(group_ID, validarGroup_ID( t+1, message_received, group_ID));
 			if(strcmp(group_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser subscription failed, invalid GID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGS E_GRP\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_GROUPID + 1;
+			t = t + MAX_GROUP_ID + 1;
 
       //Verificar o GName
 			strcpy(group_Name, validarGroup_Name( t+1, message_received, group_Name));
 			if(strcmp(group_Name,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser subscription failed, invalid GName\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGS E_GNAME\n");
 				goto sendMessageToUser;
 			}
@@ -803,6 +903,10 @@ int main (int argc, char *argv[]) {
 
         //Verifica se ja existe o numero maximo de grupos
         if(b == 99){
+          if (checkVerboseStatus() == true) {
+            printf("\nUser subscription failed, reached limit number of groups\n");
+            printf("Port: %s | Address: %s\n", portUser, addressUser);
+          }
   				strcpy(message_sent,"RGS E_FULL\n");
   				goto sendMessageToUser;
   			}
@@ -873,7 +977,7 @@ int main (int argc, char *argv[]) {
 
         if(checkVerboseStatus()){
   				printf("\nGroup %s created and subscribed by user %s\n", group_ID, user_ID);
-          //printf("%s\n", verbose);
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
         }
 
         strcpy(message_sent, "RGS NEW ");
@@ -889,8 +993,12 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o grupo existe
       if( access( dirName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RGS NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser subscription failed, GID does not exist\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGS NOK\n");
+        goto sendMessageToUser;
       }
 
       //Cria o nome do ficheiro
@@ -905,7 +1013,7 @@ int main (int argc, char *argv[]) {
 
       if(checkVerboseStatus()){
         printf("\nGroup %s subscribed by user %s\n", group_ID, user_ID);
-        //printf("%s\n", verbose);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
       }
 
       strcpy(message_sent, "RGS OK\n");
@@ -920,17 +1028,21 @@ int main (int argc, char *argv[]) {
 
 		else if (!strcmp(tarefa,"GUR")){
 
-      char user_ID[MAX_USERID + 1] = "";
-      char group_ID[MAX_GROUPID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
+      char group_ID[MAX_GROUP_ID + 1] = "";
       char fileName[MAX_DIRECTORY + 1] = "";
 
       //Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unsubscription failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGU E_USR\n");
 				goto sendMessageToUser;
 			}
-			t = t + MAX_USERID + 1;
+			t = t + MAX_USER_ID + 1;
 
       //Cria o nome do ficheiro
       strcpy(fileName, "USERS/");      // USERS/
@@ -941,13 +1053,21 @@ int main (int argc, char *argv[]) {
 
       //Verificar se o user esta logged in
       if( access( fileName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RGU NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unsubscription failed, UID not logged in\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGU NOK\n");
+        goto sendMessageToUser;
       }
 
       //Verificar o GID
 			strcpy(group_ID, validarGroup_ID( t+1, message_received, group_ID));
 			if(strcmp(group_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unsubscription failed, invalid GID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGU E_GRP\n");
 				goto sendMessageToUser;
 			}
@@ -958,8 +1078,12 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o grupo existe
       if( access( dirName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RGU NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unsubscription failed, GID does not exist\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGU NOK\n");
+        goto sendMessageToUser;
       }
 
       //Cria o nome do ficheiro
@@ -970,8 +1094,12 @@ int main (int argc, char *argv[]) {
 
       //Verifica se o user esta subscrito no grupo
       if( access( fileName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RGU NOK\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nUser unsubscription failed, UID not subscribed to GID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGU NOK\n");
+        goto sendMessageToUser;
       }
 
       errcode = remove(fileName); // Unsubscribed no grupo
@@ -979,7 +1107,7 @@ int main (int argc, char *argv[]) {
 
       if(checkVerboseStatus()){
         printf("\nGroup %s unsubscribed by user %s\n", group_ID, user_ID);
-        //printf("%s\n", verbose);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
       }
 
       strcpy(message_sent, "RGU OK\n");
@@ -998,16 +1126,20 @@ int main (int argc, char *argv[]) {
       char taskInfo[7 + 1] = "";
       // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
       char groupsInfo[34 + 1] = "";
-      char groupID[MAX_GROUPID + 1] = "";
+      char groupID[MAX_GROUP_ID + 1] = "";
       char aux[1 + 1] = "";
       char groupName[MAX_DIRECTORY + 1] = "";
-      char user_ID[MAX_USERID + 1] = "";
-      char lastMessageID[MAX_MESSAGEID + 1] = "";
+      char user_ID[MAX_USER_ID + 1] = "";
+      char lastMessageID[MAX_MESSAGE_ID + 1] = "";
 
       //Verificar o UID
       printf("%s\n",message_received );
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
 			if(strcmp(user_ID,"") == 0){
+        if (checkVerboseStatus() == true) {
+          printf("\nMy groups displayed failed, invalid UID\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
 				strcpy(message_sent,"RGM E_USR\n");
 				goto sendMessageToUser;
 			}
@@ -1021,8 +1153,12 @@ int main (int argc, char *argv[]) {
 
       //Verificar se o user esta logged in
       if( access( fileName, R_OK ) != 0 ) {
-          strcpy(message_sent,"RGM E_USR\n");
-          goto sendMessageToUser;
+        if (checkVerboseStatus() == true) {
+          printf("\nMy groups displayed failed, UID not logged in\n");
+          printf("Port: %s | Address: %s\n", portUser, addressUser);
+        }
+        strcpy(message_sent,"RGM E_USR\n");
+        goto sendMessageToUser;
       }
 
       int i = 1;
@@ -1112,7 +1248,7 @@ int main (int argc, char *argv[]) {
 
       if(checkVerboseStatus()){
 				printf("\nGroups subscribed by user %s displayed\n", user_ID);
-        //printf("%s\n", verbose);
+        printf("Port: %s | Address: %s\n", portUser, addressUser);
 			}
 
       strcpy(message_sent, taskInfo);       // 'RGL gid'
@@ -1140,9 +1276,6 @@ int main (int argc, char *argv[]) {
 
     if (strcmp(message_sent, "") == 0)
       strcpy(message_sent, "ERR");
-
-    if (strcmp(message_sent, "RIP") == 0)
-      continue;
 
 		n=sendto(fd,message_sent,strlen(message_sent),0,(struct sockaddr*)&addr,addrlen);
 		if(n==-1 )exit(1); //error
