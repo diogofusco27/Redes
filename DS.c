@@ -56,7 +56,7 @@ bool validarPort (char* argv) {
 }
 
 
-/******* If it's stupid and work, then isn't stupid *******/
+/******* If it's stupid and works, then it's not stupid *******/
 char* iAmNotProudOfThis(int b, char* group_ID){
 
     if (b == 1)
