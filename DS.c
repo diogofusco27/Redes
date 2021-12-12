@@ -56,32 +56,6 @@ bool validarPort (char* argv) {
 }
 
 
-/******* If it's stupid and works, then it's not stupid *******/
-char* iAmNotProudOfThis(int b, char* group_ID){
-
-    if (b == 1)
-      strcpy(group_ID, "01");
-    else if (b == 2)
-      strcpy(group_ID, "02");
-    else if (b == 3)
-      strcpy(group_ID, "03");
-    else if (b == 4)
-      strcpy(group_ID, "04");
-    else if (b == 5)
-      strcpy(group_ID, "05");
-    else if (b == 6)
-      strcpy(group_ID, "06");
-    else if (b == 7)
-      strcpy(group_ID, "07");
-    else if (b == 8)
-      strcpy(group_ID, "08");
-    else if (b == 9)
-      strcpy(group_ID, "09");
-
-    return group_ID;
-}
-
-
 /******* Validar user_ID *******/
 char* validarUser_ID(int i, char *comando, char *user_ID){
   for (int k = 0; isdigit(comando[i]) > 0; i++,k++) {
@@ -659,6 +633,7 @@ int main (int argc, char *argv[]) {
       // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
       char groupsInfo[34 + 1] = "";
       char groupID[MAX_GROUPID + 1] = "";
+      char aux[1 + 1] = "";
       char groupName[MAX_DIRECTORY + 1] = "";
       char lastMessageID[MAX_MESSAGEID + 1] = "";
 
@@ -666,8 +641,11 @@ int main (int argc, char *argv[]) {
       for( i; i <= MAX_GROUPS; i++){
         strcpy(dirName, "GROUPS/");         // GROUPS/
 
-        if(i < 10 )
-          strcpy(groupID, iAmNotProudOfThis(i,groupID));
+        if(i < 10 ){
+          sprintf(aux,"%d",i);
+          strcpy(groupID, "0");
+          strcat(groupID, aux);
+        }
         else if(i >= 10 && i <= 99)
          sprintf(groupID,"%d",i);
         else // easter egg
@@ -759,6 +737,7 @@ int main (int argc, char *argv[]) {
 
       char user_ID[MAX_USERID + 1] = "";
       char group_ID[MAX_GROUPID + 1] = "";
+      char aux[1 + 1] = "";
       char group_Name[MAX_GROUPNAME + 1] = "";
       char lastGroupID[MAX_GROUPID + 1] = "";
       char loginFile[MAX_PASSWORD + 1] = "";
@@ -829,8 +808,11 @@ int main (int argc, char *argv[]) {
   			}
 
         b++;
-        if(b < 10 )
-          strcpy(group_ID, iAmNotProudOfThis(b,group_ID));
+        if(b < 10 ){
+          sprintf(aux,"%d",b);
+          strcpy(group_ID, "0");
+          strcat(group_ID, aux);
+        }
         else if(b >= 10 && b <= 99)
          sprintf(group_ID,"%d",b);
         else // easter egg
@@ -1017,6 +999,7 @@ int main (int argc, char *argv[]) {
       // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
       char groupsInfo[34 + 1] = "";
       char groupID[MAX_GROUPID + 1] = "";
+      char aux[1 + 1] = "";
       char groupName[MAX_DIRECTORY + 1] = "";
       char user_ID[MAX_USERID + 1] = "";
       char lastMessageID[MAX_MESSAGEID + 1] = "";
@@ -1046,8 +1029,11 @@ int main (int argc, char *argv[]) {
       for( i; i <= MAX_GROUPS; i++){
         strcpy(dirName, "GROUPS/");         // GROUPS/
 
-        if(i < 10 )
-          strcpy(groupID, iAmNotProudOfThis(i,groupID));
+        if(i < 10 ){
+          sprintf(aux,"%d",i);
+          strcpy(groupID, "0");
+          strcat(groupID, aux);
+        }
         else if(i >= 10 && i <= 99)
          sprintf(groupID,"%d",i);
         else // easter egg
