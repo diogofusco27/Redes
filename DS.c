@@ -12,9 +12,10 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <dirent.h>
+#include <math.h>
 
 #define MAX_PORT 5
-#define MAX_TAREFA 20
+#define MAX_TAREFA 3
 #define MAX_TEXTO 240
 #define MAX_USERID 5
 #define MAX_PASSWORD 8
@@ -22,17 +23,17 @@
 #define MAX_GROUPS 99 // grupo 01 ate 99
 #define MAX_GROUPNAME 24
 #define MAX_MESSAGEID 3
-#define MAX_DIRECTORYNAME 19
-#define MAX_FILENAME 47 // directory + filename + .txt = 19+24+4 = 47
+#define MAX_DIRECTORY 47 // directory + filename + .txt = 19+24+4 = 47
 
-// TAREFA + ' ' + GROUPID + ' ' = 3+1+2+1 = 7
-// GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID + ' 'ou'\n' = 2+1+24+1+4+1 = 33
-// NUMEROdeGRUPOS = 99                7+33*99 = 3274
+// TAREFA + ' ' + GROUPID = 3+1+2 = 6
+// ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33
+// NUMEROdeGRUPOS = 99                6+33*99 = 3273 + '\n' = 3274
 #define MAX_MESSAGEUDPSENT 3274
 
 // TAREFA + ' ' + USERID + ' ' + GROUPID + ' ' + GROUPNAME + '\n'= 3+1+5+1+2+1+24 = 38
 #define MAX_MESSAGEUDPRECEIVED 38
 
+char* itoa(int, char* , int);
 
 bool verboseStatus = false; // true = vebose on , false = verbose off
 
@@ -55,19 +56,39 @@ bool validarPort (char* argv) {
 }
 
 
+/******* If it's stupid and work, then isn't stupid *******/
+char* iAmNotProudOfThis(int b, char* group_ID){
+
+    if (b == 1)
+      strcpy(group_ID, "01");
+    else if (b == 2)
+      strcpy(group_ID, "02");
+    else if (b == 3)
+      strcpy(group_ID, "03");
+    else if (b == 4)
+      strcpy(group_ID, "04");
+    else if (b == 5)
+      strcpy(group_ID, "05");
+    else if (b == 6)
+      strcpy(group_ID, "06");
+    else if (b == 7)
+      strcpy(group_ID, "07");
+    else if (b == 8)
+      strcpy(group_ID, "08");
+    else if (b == 9)
+      strcpy(group_ID, "09");
+
+    return group_ID;
+}
+
+
 /******* Validar user_ID *******/
 char* validarUser_ID(int i, char *comando, char *user_ID){
-  for (int k = 0; comando[i] != ' '; i++,k++) {
-      if (isdigit(comando[i]) > 0){
-          user_ID[k] = comando[i];
-      }
-      else {
-          printf("Erro no UID, tem que ser numerico\n");
-          return  "";
-      }
+  for (int k = 0; isdigit(comando[i]) > 0; i++,k++) {
+      user_ID[k] = comando[i];
   }
   if (strlen(user_ID) != 5) {
-      printf("Erro no UID, tem que ser tamanho 5\n");
+      printf("Erro no UID, tem que ser tamanho 5 e numerico\n");
       return  "";
   }
   return user_ID;
@@ -76,17 +97,11 @@ char* validarUser_ID(int i, char *comando, char *user_ID){
 
 /******* Validar Password *******/
 char* validarPassword(int i, char *comando, char *password){
-  for (int k = 0; comando[i] != ' ' && comando[i] !='\n' && comando[i] !='\0';i++, k++) {
-      if (isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0){ //isalnum() estava a dar erro
-          password[k] = comando[i];
-      }
-      else {
-          printf("Erro na password, tem que ser alphanumerico\n");
-          return  "";
-      }
+  for (int k = 0; isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0 ;i++, k++) {
+      password[k] = comando[i];
   }
   if (strlen(password) != 8) {
-      printf("Erro na password, tem que ser tamanho 8\n");
+      printf("Erro na password, tem que ser tamanho 8 e alphanumerica\n");
       return  "";
   }
   return password;
@@ -95,7 +110,7 @@ char* validarPassword(int i, char *comando, char *password){
 
 /******* Validar ID de grupos *******/
 char* validarGroup_ID(int i, char* comando, char* group_ID){
-  for (int w = 0; comando[i] != ' ' && isdigit(comando[i]) > 0; i++, w++) {
+  for (int w = 0; isdigit(comando[i]) > 0; i++, w++) {
         group_ID[w] = comando[i];
   }
 
@@ -110,19 +125,13 @@ char* validarGroup_ID(int i, char* comando, char* group_ID){
 
 /******* Validar Nomes de grupos *******/
 char* validarGroup_Name(int i, char* comando, char* group_Name){
-  for (int w = 0; comando[i] != ' ' && comando[i] != '\n'; i++, w++) {
-    if (isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0 ||
-                comando[i] == '-' || comando[i] == '_'){
-      group_Name[w] = comando[i];
-    }
-    else{
-      printf("Erro no group Name, caracter invalido\n");
-      return "";
-    }
+  for (int w = 0; isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0 ||
+                  comando[i] == '-' || comando[i] == '_'; i++, w++) {
+    group_Name[w] = comando[i];
   }
 
   if( strlen(group_Name) > 24 || strlen(group_Name) == 0){
-    printf("Erro no group Name, maximo tamanho 24\n");
+    printf("Erro no group Name, maximo tamanho 24e tem que ser alphanumerico ou '-' ou '_'\n");
     return  "";
   }
 
@@ -134,6 +143,10 @@ char* validarGroup_Name(int i, char* comando, char* group_Name){
 bool checkVerboseStatus(){
   return verboseStatus;
 }
+
+
+
+
 
 
 
@@ -207,17 +220,18 @@ int main (int argc, char *argv[]) {
   FILE *fp;
 
   // Verifica se o ficheiro existe, se existir as diretorias tambem existem
-  fp = fopen("IWasHere.txt", "r");
+  fp = fopen("IWasHere.txt", "r"); // ATENTION nao sei se e preciso verificar?
   if (fp == NULL) {
     errcode = mkdir("USERS",0777);
     if(errcode!=0) exit(1); //error
     errcode = mkdir("GROUPS",0777);
     if(errcode!=0) exit(1); //error
+    fp = fopen("GROUPS/lastGroupID.txt", "w+"); // Ficheiro que contem id do ultimo grupo a ser criado
+    fputs("00",fp); // Inicializa o ficheiro com o id '00'
+    fclose(fp);
     fp = fopen("IWasHere.txt", "w+");
   }
-  else{
-    fclose(fp);
-  }
+  fclose(fp);
 
 
 
@@ -225,21 +239,18 @@ int main (int argc, char *argv[]) {
   /******* Ciclo que fica à espera das mensagens dos users *******/
 	while (1){
 
-		char tarefa[MAX_TAREFA] = "";  //tarefa a executar
-		char message_received[MAX_MESSAGEUDPSENT] = "";  //mensagem recebida do user
-		char message_sent[MAX_MESSAGEUDPRECEIVED] = "";  //mensagem enviada ao user
-    char dirName[MAX_DIRECTORYNAME + 1] = ""; // nome de uma diretoria
-    char fileName[MAX_FILENAME + 1] = ""; // nome de um ficheiro
+    bool userShutedDown = false;
+
+		char tarefa[MAX_TAREFA + 1] = "";  //tarefa a executar
+		char message_received[MAX_MESSAGEUDPRECEIVED + 1] = "";  //mensagem recebida do user
+		char message_sent[MAX_MESSAGEUDPSENT + 1] = "";  //mensagem enviada ao user
+    char dirName[MAX_DIRECTORY + 1] = ""; // nome de uma diretoria
+    char fileName[MAX_DIRECTORY + 1] = ""; // nome de um ficheiro
 
 		// comunicacao com o user em UDP
 		addrlen=sizeof(addr);
 		n=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED,0,(struct sockaddr*)&addr,&addrlen);
 		if(n==-1) exit(1); //error
-
-
-    if(checkVerboseStatus()){
-      //faz coisas
-    }
 
 		// le o tipo de tarefa que e para fazer da mensagem
 		int t = 0;
@@ -248,9 +259,79 @@ int main (int argc, char *argv[]) {
 		}
 
 
+
+    /* ----------------------------------------- */
+		/*        Tarefa:                            */
+		/*        recebe: >EXT                       */
+		/*        envia: >                           */
+		/* ----------------------------------------- */
+
+    if (!strcmp(message_received,"EXT")){
+
+      if(checkVerboseStatus()){
+        printf("\nUDP connection ended\n");
+        //printf("%s\n", verbose); // ATENTION ip e port !?
+      }
+
+      strcpy(message_sent, "RIP");
+      goto sendMessageToUser;
+    }
+
+
+    /* ----------------------------------------- */
+		/*        Tarefa: logout                     */
+		/*        recebe: >EXT UID                   */
+		/*        envia: >                           */
+		/* ----------------------------------------- */
+
+    else if (!strcmp(tarefa,"EXT")){
+
+      char user_ID[MAX_USERID + 1] = "";
+      char forged_message[MAX_MESSAGEUDPRECEIVED + 1] = "";
+      char passwordFile[MAX_PASSWORD + 1] = "";
+
+      //Buscar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+      if(strcmp(user_ID,"") == 0){ // easter egg
+				printf("Only by the power of god could this be written");
+        continue;
+			}
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, "USERS/");      // USERS/
+      strcat(fileName, user_ID);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
+
+      //Buscar a password do userID
+      fp = fopen(fileName, "r");
+      int c, w = 0;
+      while ((c = fgetc(fp)) != EOF){
+        if(c == '\n') // quando apanha o '\n'
+          break;
+        passwordFile[w] = c;
+        w++;
+      }
+      fclose(fp);
+
+      strcpy(tarefa, "OUT");
+      strcpy(forged_message, tarefa);
+      strcat(forged_message, " ");
+      strcat(forged_message, user_ID);
+      strcat(forged_message, " ");
+      strcat(forged_message, passwordFile);
+      strcat(forged_message, "\n");
+
+      strcpy(message_received, forged_message);
+      userShutedDown = true;
+
+    }
+
+
 		/* ----------------------------------------- */
 		/*        Tarefa: registar utilizador        */
-		/*        recebide: >REG UID pass            */
+		/*        recebe: >REG UID pass              */
 		/*        envia: >RRG status                 */
 		/* ----------------------------------------- */
 
@@ -261,9 +342,9 @@ int main (int argc, char *argv[]) {
 
 			//Verificar o UID
 			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
-			if(strcmp(user_ID,"") == 0){
-				strcpy(message_sent,"RRG NOK\n");
-				goto sendMessageToUser;
+			if(strcmp(user_ID,"") == 0){ // easter egg
+        printf("WATCH OUT BEHIND YOU");
+        continue;
 			}
 			t = t + MAX_USERID + 1;
 
@@ -284,15 +365,15 @@ int main (int argc, char *argv[]) {
           goto sendMessageToUser;
       }
 
+      //Cria a directoria
+      errcode = mkdir(dirName,0777);
+      if(errcode!=0) exit(1); //error
+
       //Cria o nome do ficheiro
       strcpy(fileName, dirName);       // USERS/uid
       strcat(fileName, "/");           // USERS/uid/
       strcat(fileName, user_ID);       // USERS/uid/uid
       strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
-
-      //Cria a directoria
-      errcode = mkdir(dirName,0777);
-      if(errcode!=0) exit(1); //error
 
       //Cria o ficheiro e escreve a password
 			fp = fopen(fileName, "w+");
@@ -301,7 +382,7 @@ int main (int argc, char *argv[]) {
 
 			if(checkVerboseStatus()){
 				printf("\nUser %s registed\n", user_ID);
-        //printf("%s\n", verbose);
+        //printf("%s\n", verbose); // ATENTION ip e port !?
 			}
 			strcpy(message_sent,"RRG OK\n");
 		}
@@ -309,7 +390,7 @@ int main (int argc, char *argv[]) {
 
     /* ----------------------------------------- */
     /*        Tarefa: Apagar utilizador          */
-    /*        recebide: >UNR UID pass            */
+    /*        recebe: >UNR UID pass              */
     /*        envia: >RUN status                 */
     /* ----------------------------------------- */
 
@@ -351,21 +432,28 @@ int main (int argc, char *argv[]) {
       strcat(fileName, user_ID);       // USERS/uid/uid
       strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
 
-      //Comparar as passwords
+      //Buscar a password do userID
       fp = fopen(fileName, "r");
-      for(int i = 0; i < MAX_PASSWORD; i++)
-        passwordFile[i] = fgetc( fp );
+      int c, w = 0;
+      while ((c = fgetc(fp)) != EOF){
+        if(c == '\n') // quando apanha o '\n'
+          break;
+        passwordFile[w] = c;
+        w++;
+      }
       fclose(fp);
 
+      //Comparar as passwords
       if (strcmp(password,passwordFile) != 0){
-          strcpy(message_sent,"RUN NOK\n");
+          strcpy(message_sent,"ROU NOK\n");
           goto sendMessageToUser;
       }
 
-      //Apaga coisas dentro da diretoria
+      //Apaga ficheiros dentro da diretoria
       DIR *theFolder = opendir(dirName);
       struct dirent *next_file;
       char filepath[50];
+
       strcpy(fileNameEND, dirName);     // USERS/uid
       strcat(fileNameEND, "/.");        // USERS/uid/.
 
@@ -391,27 +479,659 @@ int main (int argc, char *argv[]) {
 
 		}
 
+
+    /* ----------------------------------------- */
+    /*        Tarefa: login                      */
+    /*        recebe: >LOG UID pass              */
+    /*        envia: >RLO status                 */
+    /* ----------------------------------------- */
+
 		else if (!strcmp(tarefa,"LOG")){
 
+      char user_ID[MAX_USERID + 1] = "";
+      char password[MAX_PASSWORD + 1] = "";
+      char passwordFile[MAX_PASSWORD + 1] = "";
+      char loginFile[MAX_PASSWORD + 1] = "";
+
+      //Verificar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"RLO NOK\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_USERID + 1;
+
+      //Cria o nome da directoria
+      strcpy(dirName, "USERS/");       // USERS/
+      strcat(dirName, user_ID);        // USERS/uid
+
+      //Verifica se o user ja esta registado
+      if( access( dirName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RLO NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Verificar a password
+			strcpy(password, validarPassword( t+1, message_received, password));
+			if(strcmp(password,"") == 0){
+				strcpy(message_sent,"RLO NOK\n");
+				goto sendMessageToUser;
+			}
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcpy(loginFile, fileName);     // USERS/uid/uid
+      strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
+      strcat(loginFile, "_login.txt"); // USERS/uid/uid_login.txt
+
+      //Buscar a password do userID
+      fp = fopen(fileName, "r");
+      int c, w = 0;
+      while ((c = fgetc(fp)) != EOF){
+        if(c == '\n') // quando apanha o '\n'
+          break;
+        passwordFile[w] = c;
+        w++;
+      }
+      fclose(fp);
+
+      //Comparar as passwords
+      if (strcmp(password,passwordFile) != 0){
+          strcpy(message_sent,"RLO NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Cria o ficheiro de login
+      fp = fopen(loginFile, "w+");
+      fclose(fp);
+
+      if(checkVerboseStatus()){
+				printf("\nUser %s Logged in\n", user_ID);
+        //printf("%s\n", verbose);
+			}
+			strcpy(message_sent,"RLO OK\n");
+
 		}
+
+
+    /* ----------------------------------------- */
+    /*        Tarefa: logout                     */
+    /*        recebe: >OUT UID pass              */
+    /*        envia: >ROU status                 */
+    /* ----------------------------------------- */
 
 		else if (!strcmp(tarefa,"OUT")){
 
+      char user_ID[MAX_USERID + 1] = "";
+      char password[MAX_PASSWORD + 1] = "";
+      char passwordFile[MAX_PASSWORD + 1] = "";
+      char loginFile[MAX_PASSWORD + 1] = "";
+
+      //Verificar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"ROU NOK\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_USERID + 1;
+
+      //Cria o nome da directoria
+      strcpy(dirName, "USERS/");       // USERS/
+      strcat(dirName, user_ID);        // USERS/uid
+
+      //Verifica se o user ja esta registado
+      if( access( dirName, R_OK ) != 0 ) {
+          strcpy(message_sent,"ROU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Verificar a password
+			strcpy(password, validarPassword( t+1, message_received, password));
+			if(strcmp(password,"") == 0){
+				strcpy(message_sent,"ROU NOK\n");
+				goto sendMessageToUser;
+			}
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcpy(loginFile, fileName);     // USERS/uid/uid
+      strcat(fileName, "_pass.txt");   // USERS/uid/uid_pass.txt
+      strcat(loginFile, "_login.txt"); // USERS/uid/uid_login.txt
+
+      //Buscar a password do userID
+      fp = fopen(fileName, "r");
+      int c, w = 0;
+      while ((c = fgetc(fp)) != EOF){
+        if(c == '\n') // quando apanha o '\n'
+          break;
+        passwordFile[w] = c;
+        w++;
+      }
+      fclose(fp);
+
+      //Comparar as passwords
+      if (strcmp(password,passwordFile) != 0){
+          strcpy(message_sent,"ROU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Verifica se o user esta logged in
+      if( access( loginFile, R_OK ) != 0 ) {
+          strcpy(message_sent,"ROU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Apaga o ficheiro login
+      errcode = remove(loginFile);
+      if(errcode!=0) exit(1); //error
+
+      if(checkVerboseStatus()){
+				printf("\nUser %s Logged out\n", user_ID);
+        //printf("%s\n", verbose);
+			}
+			strcpy(message_sent,"ROU OK\n");
+
+      if(userShutedDown == true){
+        if(checkVerboseStatus()){
+  				printf("\nUDP connection ended and user %s Logged out\n", user_ID);
+          //printf("%s\n", verbose);
+  			}
+        continue;
+      }
+
 		}
+
+
+    /* ----------------------------------------- */
+    /*        Tarefa: groups                     */
+    /*        recebe: >GLS                       */
+    /*        envia: >RGL N[ GID GName MID]*     */
+    /* ----------------------------------------- */
 
 		else if (!strcmp(tarefa,"GLS")){
 
+      // TAREFA + ' ' + GROUPID + ' ' = 3+1+2+1 = 7
+      char taskInfo[7 + 1] = "";
+      // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
+      char groupsInfo[34 + 1] = "";
+      char groupID[MAX_GROUPID + 1] = "";
+      char groupName[MAX_DIRECTORY + 1] = "";
+      char lastMessageID[MAX_MESSAGEID + 1] = "";
+
+      int i = 1;
+      for( i; i <= MAX_GROUPS; i++){
+        strcpy(dirName, "GROUPS/");         // GROUPS/
+
+        if(i < 10 )
+          strcpy(groupID, iAmNotProudOfThis(i,groupID));
+        else if(i >= 10 && i <= 99)
+         sprintf(groupID,"%d",i);
+        else // easter egg
+          printf("Hello there !!");
+
+        strcat(dirName, groupID);          // GROUPS/gid
+
+        //Verifica se o grupo existe
+        if( access( dirName, R_OK ) != 0 ) {
+            break;
+        }
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, dirName);         // GROUPS/gid
+        strcat(fileName, "/");             // GROUPS/gid/
+        strcat(fileName, groupID);         // GROUPS/gid/gid
+        strcat(fileName, "_name.txt");     // GROUPS/gid/gid_name.txt
+
+        //Ler o nome do grupo ao ficheiro
+        fp = fopen(fileName, "r");
+        int c, w = 0;
+        while ((c = fgetc(fp)) != EOF){
+          if(c == '\n') // quando apanha o '\n'
+            break;
+          groupName[w] = c;
+          w++;
+        }
+        fclose(fp);
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, dirName);             // GROUPS/gid
+        strcat(fileName, "/MSG/");             // GROUPS/gid/MSG/
+        strcat(fileName, "lastMessageID.txt"); // GROUPS/gid/MSG/lastMessageID.txt
+
+        //Ler o id da ultima mensagem do grupo no ficheiro
+        fp = fopen(fileName, "r+");
+        int h, f = 0;
+        while ((h = fgetc(fp)) != EOF){
+          if(h == '\n') // se apanha um '\n'
+            break;
+          lastMessageID[f] = h;
+          f++;
+        }
+        fclose(fp);
+
+        //Cria o nome do ficheiro
+        strcat(groupsInfo, " ");            // ' '
+        strcat(groupsInfo, groupID);        // ' gid'
+        strcat(groupsInfo, " ");            // ' gid '
+        strcat(groupsInfo, groupName);      // ' gid  gname'
+        strcat(groupsInfo, " ");            // ' gid  gname '
+        strcat(groupsInfo, lastMessageID);  // ' gid  gname  mid'
+
+      }
+
+      //Vai buscar o groupID do ultimo grupo, que é igual ao numero de grupos existentes
+      fp = fopen("GROUPS/lastGroupID.txt", "r");
+      int p, r = 0;
+      while ((p = fgetc(fp)) != EOF){
+        if(p == '\n') // quando apanha o '\n'
+          break;
+        groupID[r] = p;
+        r++;
+      }
+      fclose(fp);
+
+      strcpy(taskInfo, "RGL ");             // 'RGL '
+      strcat(taskInfo, groupID);            // 'RGL gid'
+
+      if(checkVerboseStatus()){
+				printf("\nGroups Displayed\n");
+        //printf("%s\n", verbose);
+			}
+
+      strcpy(message_sent, taskInfo);       // 'RGL gid'
+      strcat(message_sent, groupsInfo);     // 'RGL gid[ gid  gname mid]*'
+      strcat(message_sent, "\n");           // 'RGL gid[ gid  gname mid]*\n'
+
 		}
+
+
+    /* ----------------------------------------- */
+    /*        Tarefa: subscribe                  */
+    /*        recebe: >GSR UID GID GName         */
+    /*        envia: >RGS status                 */
+    /* ----------------------------------------- */
 
 		else if (!strcmp(tarefa,"GSR")){
 
+      char user_ID[MAX_USERID + 1] = "";
+      char group_ID[MAX_GROUPID + 1] = "";
+      char group_Name[MAX_GROUPNAME + 1] = "";
+      char lastGroupID[MAX_GROUPID + 1] = "";
+      char loginFile[MAX_PASSWORD + 1] = "";
+      char fileName[MAX_DIRECTORY + 1] = "";
+
+      //Verificar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"RGS E_USR\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_USERID + 1;
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, "USERS/");      // USERS/
+      strcat(fileName, user_ID);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_login.txt");  // USERS/uid/uid_login.txt
+
+      //Verificar se o user esta logged in
+      if( access( fileName, F_OK ) != 0 ) {
+          strcpy(message_sent,"RGS NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Verificar o GID
+			strcpy(group_ID, validarGroup_ID( t+1, message_received, group_ID));
+			if(strcmp(group_ID,"") == 0){
+				strcpy(message_sent,"RGS E_GRP\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_GROUPID + 1;
+
+      //Verificar o GName
+			strcpy(group_Name, validarGroup_Name( t+1, message_received, group_Name));
+			if(strcmp(group_Name,"") == 0){
+				strcpy(message_sent,"RGS E_GNAME\n");
+				goto sendMessageToUser;
+			}
+
+      //Verifica se é suposto criar um grupo novo
+      if (strcmp(group_ID, "00") == 0 ){
+
+        strcpy(dirName, "GROUPS/");       // GROUPS/
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, dirName);             // GROUPS/
+        strcat(fileName, "lastGroupID.txt");   // GROUPS/lastGroupID.txt
+
+        //Ler o id do ultimo grupo no ficheiro
+        fp = fopen(fileName, "r+");
+        int c, w = 0;
+        while ((c = fgetc(fp)) != EOF){
+          if(c == '\n') // se apanha um '\n'
+            break;
+          lastGroupID[w] = c;
+          w++;
+        }
+        fclose(fp);
+
+        int b = atoi(lastGroupID);
+
+        //Verifica se ja existe o numero maximo de grupos
+        if(b == 99){
+  				strcpy(message_sent,"RGS E_FULL\n");
+  				goto sendMessageToUser;
+  			}
+
+        b++;
+        if(b < 10 )
+          strcpy(group_ID, iAmNotProudOfThis(b,group_ID));
+        else if(b >= 10 && b <= 99)
+         sprintf(group_ID,"%d",b);
+        else // easter egg
+          printf("General Kenobi !!");
+
+        //Cria o nome da diretoria do grupo
+        strcat(dirName, group_ID);        // GROUPS/gid
+
+        //Cria a directoria do grupo
+        errcode = mkdir(dirName,0777);
+        if(errcode!=0) exit(1); //error
+
+        //Escreve o id do grupo na lista de grupos
+  			fp = fopen(fileName, "w+");
+        fputs(group_ID, fp);
+        fclose(fp);
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, dirName);       // GROUPS/gid
+        strcat(fileName, "/");           // GROUPS/gid/
+        strcat(fileName, group_ID);      // GROUPS/gid/gid
+        strcat(fileName, "_name.txt");   // GROUPS/gid/gid_name.txt
+
+        //Cria o ficheiro e escreve o nome do grupo
+  			fp = fopen(fileName, "w+");
+        fputs(group_Name, fp);
+        fclose(fp);
+
+        //Cria o nome da diretoria das mensagens do grupo
+        strcat(dirName, "/");            // GROUPS/gid/
+        strcat(dirName, "MSG");          // GROUPS/gid/MSG
+
+        //Cria a diretoria das mensagens do grupo
+        errcode = mkdir(dirName,0777);
+        if(errcode!=0) exit(1); //error
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, "GROUPS/");           // GROUPS/
+        strcat(fileName, group_ID);            // GROUPS/gid
+        strcat(fileName, "/MSG/");             // GROUPS/gid/MSG
+        strcat(fileName, "lastMessageID.txt"); // GROUPS/gid/MSG/uid.txt
+
+        //Cria o ficheiro
+        fp = fopen(fileName, "w+");  // Ficheiro que contem o id da ultima mensagem que foi posted
+        fputs("0000",fp); // Inicializa o ficheiro com o id '00'
+        fclose(fp);
+
+        //Cria o nome do ficheiro
+        strcpy(fileName, "GROUPS/");     // GROUPS/
+        strcat(fileName, group_ID);      // GROUPS/gid
+        strcat(fileName, "/");           // GROUPS/gid/
+        strcat(fileName, user_ID);       // GROUPS/gid/uid
+        strcat(fileName, ".txt");        // GROUPS/gid/uid.txt
+
+        //Cria o ficheiro
+        fp = fopen(fileName, "w+");  // Subscrever no grupo
+        fclose(fp);
+
+        if(checkVerboseStatus()){
+  				printf("\nGroup %s created and subscribed by user %s\n", group_ID, user_ID);
+          //printf("%s\n", verbose);
+        }
+
+        strcpy(message_sent, "RGS NEW ");
+        strcat(message_sent, group_ID);
+        strcat(message_sent, "\n");
+        goto sendMessageToUser;
+      }
+
+
+      //Cria o nome da diretoria do grupo
+      strcpy(dirName, "GROUPS/");       // GROUPS/
+      strcat(dirName, group_ID);        // GROUPS/gid
+
+      //Verifica se o grupo existe
+      if( access( dirName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RGS NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // GROUPS/gid
+      strcat(fileName, "/");           // GROUPS/gid/
+      strcat(fileName, user_ID);       // GROUPS/gid/uid
+      strcat(fileName, ".txt");        // GROUPS/gid/uid.txt
+
+      //Cria o ficheiro
+      fp = fopen(fileName, "w+");  // Subscribe no grupo
+      fclose(fp);
+
+      if(checkVerboseStatus()){
+        printf("\nGroup %s subscribed by user %s\n", group_ID, user_ID);
+        //printf("%s\n", verbose);
+      }
+
+      strcpy(message_sent, "RGS OK\n");
 		}
+
+
+    /* ----------------------------------------- */
+    /*        Tarefa: unsubscribe                */
+    /*        recebe: >GUR UID GID               */
+    /*        envia: >RGU status                 */
+    /* ----------------------------------------- */
 
 		else if (!strcmp(tarefa,"GUR")){
 
+      char user_ID[MAX_USERID + 1] = "";
+      char group_ID[MAX_GROUPID + 1] = "";
+      char fileName[MAX_DIRECTORY + 1] = "";
+
+      //Verificar o UID
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"RGU E_USR\n");
+				goto sendMessageToUser;
+			}
+			t = t + MAX_USERID + 1;
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, "USERS/");      // USERS/
+      strcat(fileName, user_ID);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_login.txt");  // USERS/uid/uid_login.txt
+
+      //Verificar se o user esta logged in
+      if( access( fileName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RGU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Verificar o GID
+			strcpy(group_ID, validarGroup_ID( t+1, message_received, group_ID));
+			if(strcmp(group_ID,"") == 0){
+				strcpy(message_sent,"RGU E_GRP\n");
+				goto sendMessageToUser;
+			}
+
+      //Cria o nome da diretoria do grupo
+      strcpy(dirName, "GROUPS/");       // GROUPS/
+      strcat(dirName, group_ID);        // GROUPS/gid
+
+      //Verifica se o grupo existe
+      if( access( dirName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RGU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, dirName);       // GROUPS/gid
+      strcat(fileName, "/");           // GROUPS/gid/
+      strcat(fileName, user_ID);       // GROUPS/gid/uid
+      strcat(fileName, ".txt");        // GROUPS/gid/uid.txt
+
+      //Verifica se o user esta subscrito no grupo
+      if( access( fileName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RGU NOK\n");
+          goto sendMessageToUser;
+      }
+
+      errcode = remove(fileName); // Unsubscribed no grupo
+      if(errcode!=0) exit(1); //error
+
+      if(checkVerboseStatus()){
+        printf("\nGroup %s unsubscribed by user %s\n", group_ID, user_ID);
+        //printf("%s\n", verbose);
+      }
+
+      strcpy(message_sent, "RGU OK\n");
 		}
 
+
+    /* ----------------------------------------- */
+    /*        Tarefa: my groups                  */
+    /*        recebe: >GLM UID                   */
+    /*        envia: >RGM N[ GID GName MID]*     */
+    /* ----------------------------------------- */
+
 		else if (!strcmp(tarefa,"GLM")){
+
+      // TAREFA + ' ' + GROUPID + ' ' = 3+1+2+1 = 7
+      char taskInfo[7 + 1] = "";
+      // ' ' + GROUPID + ' ' + GROUPNAME + ' ' + MESSAGEID = 1+2+1+24+1+4 = 33 + '\n' = 34
+      char groupsInfo[34 + 1] = "";
+      char groupID[MAX_GROUPID + 1] = "";
+      char groupName[MAX_DIRECTORY + 1] = "";
+      char user_ID[MAX_USERID + 1] = "";
+      char lastMessageID[MAX_MESSAGEID + 1] = "";
+
+      //Verificar o UID
+      printf("%s\n",message_received );
+			strcpy(user_ID, validarUser_ID( t+1, message_received, user_ID));
+			if(strcmp(user_ID,"") == 0){
+				strcpy(message_sent,"RGM E_USR\n");
+				goto sendMessageToUser;
+			}
+
+      //Cria o nome do ficheiro
+      strcpy(fileName, "USERS/");      // USERS/
+      strcat(fileName, user_ID);       // USERS/uid
+      strcat(fileName, "/");           // USERS/uid/
+      strcat(fileName, user_ID);       // USERS/uid/uid
+      strcat(fileName, "_login.txt");  // USERS/uid/uid_login.txt
+
+      //Verificar se o user esta logged in
+      if( access( fileName, R_OK ) != 0 ) {
+          strcpy(message_sent,"RGM E_USR\n");
+          goto sendMessageToUser;
+      }
+
+      int i = 1;
+      for( i; i <= MAX_GROUPS; i++){
+        strcpy(dirName, "GROUPS/");         // GROUPS/
+
+        if(i < 10 )
+          strcpy(groupID, iAmNotProudOfThis(i,groupID));
+        else if(i >= 10 && i <= 99)
+         sprintf(groupID,"%d",i);
+        else // easter egg
+          printf("Sneaky Sneaky");
+
+        strcat(dirName, groupID);          // GROUPS/gid
+
+        //Verifica se o grupo existe
+        if( access( dirName, R_OK ) != 0 ) {
+            break;
+        }
+
+        strcpy(fileName, dirName);         // GROUPS/gid
+        strcat(fileName, "/");             // GROUPS/gid/
+        strcat(fileName, user_ID);          // GROUPS/gid/uid
+        strcat(fileName, ".txt");          // GROUPS/gid/uid.txt
+
+        //Verifica se o user esta subscribed no grupo
+        if( access( fileName, R_OK ) == 0 ){
+
+          strcpy(fileName, dirName);         // GROUPS/gid
+          strcat(fileName, "/");             // GROUPS/gid/
+          strcat(fileName, groupID);         // GROUPS/gid/gid
+          strcat(fileName, "_name.txt");     // GROUPS/gid/gid_name.txt
+
+          //Ler o nome do grupo ao ficheiro
+          fp = fopen(fileName, "r");
+          int c, w = 0;
+          while ((c = fgetc(fp)) != EOF){
+            if(c == '\n') // quando apanha o '\n'
+              break;
+            groupName[w] = c;
+            w++;
+          }
+          fclose(fp);
+
+          //Cria o nome do ficheiro
+          strcpy(fileName, dirName);             // GROUPS/gid
+          strcat(fileName, "/MSG/");             // GROUPS/gid/MSG/
+          strcat(fileName, "lastMessageID.txt"); // GROUPS/gid/MSG/lastMessageID.txt
+
+          //Ler o id da ultima mensagem do grupo no ficheiro
+          fp = fopen(fileName, "r+");
+          int p, r = 0;
+          while ((p = fgetc(fp)) != EOF){
+            if(p == '\n') // se apanha um '\n'
+              break;
+            lastMessageID[r] = p;
+            r++;
+          }
+          fclose(fp);
+
+          strcat(groupsInfo, " ");            // ' '
+          strcat(groupsInfo, groupID);        // ' gid'
+          strcat(groupsInfo, " ");            // ' gid '
+          strcat(groupsInfo, groupName);      // ' gid  gname'
+          strcat(groupsInfo, " ");            // ' gid  gname '
+          strcat(groupsInfo, lastMessageID);  // ' gid  gname  mid'
+        }
+
+      }
+
+      //Vai buscar o groupID do ultimo grupo, que é igual ao numero de grupos existentes
+      fp = fopen("GROUPS/lastGroupID.txt", "r");
+      int c, w = 0;
+      while ((c = fgetc(fp)) != EOF){
+        if(c == '\n') // quando apanha o '\n'
+          break;
+        groupID[w] = c;
+        w++;
+      }
+      fclose(fp);
+
+      strcpy(taskInfo, "RGM ");             // 'RGL '
+      strcat(taskInfo, groupID);            // 'RGL gid'
+
+      if(checkVerboseStatus()){
+				printf("\nGroups subscribed by user %s displayed\n", user_ID);
+        //printf("%s\n", verbose);
+			}
+
+      strcpy(message_sent, taskInfo);       // 'RGL gid'
+      strcat(message_sent, groupsInfo);     // 'RGL gid[ gid  gname mid]*'
+      strcat(message_sent, "\n");           // 'RGL gid[ gid  gname mid]*\n'
 
 		}
 
@@ -431,6 +1151,12 @@ int main (int argc, char *argv[]) {
 	    strcpy(message_sent,"ERR");
 
     sendMessageToUser:
+
+    if (strcmp(message_sent, "") == 0)
+      strcpy(message_sent, "ERR");
+
+    if (strcmp(message_sent, "RIP") == 0)
+      continue;
 
 		n=sendto(fd,message_sent,strlen(message_sent),0,(struct sockaddr*)&addr,addrlen);
 		if(n==-1 )exit(1); //error
