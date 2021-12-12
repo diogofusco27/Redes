@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <signal.h>
 
 #define MAX_COMANDO 500
 #define MAX_TAREFA 3
@@ -235,6 +236,7 @@ char* validarGroup_ID(int i, char* comando, char* group_ID){
 }
 
 
+/******* Verifica se a tarefa é executavel sem ser enviada ao server *******/
 bool inspecionarMensagem(char* message_sent){
 
   char tarefa[MAX_TAREFA + 1] = "";  //tarefa a executar
@@ -296,6 +298,7 @@ bool inspecionarMensagem(char* message_sent){
 
 
 
+
 int main (int argc, char *argv[]) {
 
     char address[MAX_IP + 1] = "127.0.0.1"; // IP default
@@ -336,7 +339,7 @@ int main (int argc, char *argv[]) {
 
     /******* Inicializar conexao UDP *******/
     int fd,errcode;
-    ssize_t n;
+    ssize_t ns,nr;
     socklen_t addrlen;
     struct addrinfo hints,*res;
     struct sockaddr_in addr;
@@ -386,8 +389,8 @@ int main (int argc, char *argv[]) {
         }
 
         // comunicacao com o server em UDP
-        n=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
-        if(n==-1) exit(1); //error
+        ns=sendto(fd,message_sent,strlen(message_sent),0,res->ai_addr,res->ai_addrlen);
+        if(ns==-1) exit(1); //error
 
         if (shutDownTime == true){
           freeaddrinfo(res);
@@ -396,8 +399,8 @@ int main (int argc, char *argv[]) {
         }
 
         addrlen=sizeof(addr);
-        n=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED + 1,0,(struct sockaddr*)&addr,&addrlen);
-        if(n==-1) exit(1); //error
+        nr=recvfrom(fd,message_received,MAX_MESSAGEUDPRECEIVED + 1,0,(struct sockaddr*)&addr,&addrlen);
+        if(nr==-1) exit(1); //error
 
         // Variavel 't' = indica a posiçao de leitura na mensagem enviada pelo user
         // Variavel 'k' = indica a posiçao de leitura na mensagem recebida do server

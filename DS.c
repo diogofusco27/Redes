@@ -611,8 +611,8 @@ int main (int argc, char *argv[]) {
 			t = t + MAX_USERID + 1;
 
       //Cria o nome da directoria
-      strcpy(dirName, "USERS/");       // USERS/
-      strcat(dirName, user_ID);        // USERS/uid
+      strcpy(dirName, "USERS/");        // USERS/
+      strcat(dirName, user_ID);         // USERS/uid
 
       //Cria o nome do ficheiro
       strcpy(loginFile, dirName);       // USERS/uid
