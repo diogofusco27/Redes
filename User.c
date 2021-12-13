@@ -17,14 +17,16 @@
 #define MAX_STATUS 5
 #define MAX_TEXTO 240
 #define MAX_USER_ID 5
+#define MAX_PASSWORD 8
 #define MAX_IP 30
 #define MAX_PORT 5
 #define MAX_GROUP_ID 2 // 99 grupos
-#define MAX_MESSAGE_ID 3
+#define MAX_MESSAGE_ID 4
+#define MAX_GROUP_NAME 24
 
 // 'GID - GNAME MID\n' = 2+3+24+1+4+1 = 35
 // NUMEROdeGRUPOS = 99               35*99 = 3465
-#define MAX_GROUP_DISPLAY 3465
+#define MAX_DISPLAY 3465
 
 // 'TAREFA UID GID GNAME\n'= 3+1+5+1+2+1+24 = 37 + '\n' = 38
 #define MAX_MESSAGE_UDP_SENT 38
@@ -38,9 +40,9 @@
 // NUMEROdeGRUPOS = 99                6+33*99 = 3273 + '\n' = 3274
 #define MAX_MESSAGE_UDP_RECEIVED 3274
 
-// 'TAREFA status' = 3+1+3 = 7   [ GName[ UID]*] = 1+24+(1+5)*100000 = 600025
-//  7 + 600025 +'\n' = 600033
-#define MAX_MESSAGE_TCP_RECEIVED 600033
+// 'TAREFA status' = 3+1+5 = 9   [ GName[ UID]*] = 1+24+(1+5)*100000 = 600025
+//  9 + 600025 +'\n' = 600035
+#define MAX_MESSAGE_TCP_RECEIVED 600035
 
 // 'TAREFA status N' = 3+1+3+1+4 = 12          12 + (294 * 20) = 5892
 // [ MID UID Tsize text [/ Fname Fsize data]] = 1+4+1+5+1+3+1+240+[1+1+24+1+10+1+data] = 294
@@ -50,7 +52,9 @@
 bool conectionUDP = true; // true = conexao UDP , false = conexao TCP
 bool userLogStatus = false; // true = login , false = logout
 bool shutDownTime = false; // true = someone introduced 'exit' command
+
 char userLogID[MAX_USER_ID + 1] = "";
+char userLogPass[MAX_PASSWORD + 1] = "";
 char activeGroup[MAX_GROUP_ID + 1] = "";
 
 
@@ -101,25 +105,10 @@ char* createMessage(char *comando, char *message){
     strcpy(message,"LOG");
   else if (!strcmp(tarefa,"logout"))
     strcpy(message,"OUT");
-  else if (!strcmp(tarefa,"groups") || !strcmp(tarefa,"gl")){
-    strcpy(message,"GLS\n");
-    return message;
-  }
-  else if (!strcmp(tarefa,"exit")){
-    if (checkUserLogStatus() == true){
-      strcat(message, "EXT ");
-      strcat(message, userLogID);
-      strcat(message, "\n");
-      shutDownTime = true;
-      return message;
-    }
-    else{
-      strcpy(message,"EXT");
-      return message;
-    }
-    shutDownTime = true;
-    return message;
-  }
+  else if (!strcmp(tarefa,"groups") || !strcmp(tarefa,"gl"))
+    return "GLS\n";
+  else if (!strcmp(tarefa,"exit"))
+    return "exit";
   else if (!strcmp(tarefa,"subscribe") || !strcmp(tarefa,"s")){
     strcpy(message,"GSR");
     taskRequiresLogin = true;
@@ -171,6 +160,32 @@ char* createMessage(char *comando, char *message){
   message[k] = '\n'; //adiciona o '\n' no final da mensagem
   return message;
 
+}
+
+
+/******* Validar lista de users *******/
+char* validarListaUsers(int k, char *message_received, char* users_list){
+  char list_aux[MAX_USER_ID + 1] = "";
+  int a = 30;
+  while(a > 0){
+    for (int w = 0; isdigit(message_received[k]) >= 0; w++, k++) {
+          list_aux[w] = message_received[k];
+    }
+
+    if( strlen(list_aux) != 5){
+      return  "";
+    }
+    strcat(users_list, list_aux);
+
+    //verifica se esta no fim da lista
+    if(message_received[k] == '\n'){
+      strcat(users_list, "\n");
+      return users_list;
+    }
+
+    k++;
+    strcat(users_list, " ");
+  }
 }
 
 
@@ -405,11 +420,21 @@ int main (int argc, char *argv[]) {
         strcpy(message_sent, createMessage(comando, message_sent));
 
         //verififa se tarefa é exit
-        if (strcmp(message_sent, "EXT") == 0){
-          freeaddrinfo(resUDP);
-          freeaddrinfo(resTCP);
-          close(fdUDP);
-          exit(1);
+        if (strcmp(message_sent, "exit") == 0){
+          shutDownTime = true;
+          if(checkUserLogStatus() == true){
+            strcpy(message_sent, "OUT ");
+            strcat(message_sent, userLogID);
+            strcat(message_sent, " ");
+            strcat(message_sent, userLogPass);
+            strcat(message_sent, "\n");
+          }
+          else{
+            freeaddrinfo(resUDP);
+            freeaddrinfo(resTCP);
+            close(fdUDP);
+            exit(1);
+          }
         }
 
         // Verifica se é uma tarefa que não necessita enviar mensagem ao server
@@ -420,10 +445,17 @@ int main (int argc, char *argv[]) {
         //Escolhe o tipo de conexao para enviar a mensagem ao server (TCP ou UDP)
         if(conectionUDP == true){ // comunicacao com o server em UDP (default)
 
-          // comunicacao com o server em UDP
+          //printf("S: %s\n", message_sent);
 
+          // comunicacao com o server em UDP
           nu=sendto(fdUDP,message_sent,strlen(message_sent),0,resUDP->ai_addr,resUDP->ai_addrlen);
           if(nu==-1) exit(1); //error
+
+          addrlen=sizeof(addr);
+          nu=recvfrom(fdUDP,message_received,MAX_MESSAGE_UDP_RECEIVED + 1,0,(struct sockaddr*)&addr,&addrlen);
+          if(nu==-1) exit(1); //error
+
+          //printf("R: %s\n", message_received);
 
           if (shutDownTime == true){
             freeaddrinfo(resUDP);
@@ -432,13 +464,11 @@ int main (int argc, char *argv[]) {
             exit(1);
           }
 
-          addrlen=sizeof(addr);
-          nu=recvfrom(fdUDP,message_received,MAX_MESSAGE_UDP_RECEIVED + 1,0,(struct sockaddr*)&addr,&addrlen);
-          if(nu==-1) exit(1); //error
-
         }
 
         else { // comunicacao com o server em TCP
+          char message_portion[50] = "";
+          char last_message_received[50] = "";
 
           fdTCP=socket(AF_INET,SOCK_STREAM,0);   //TCP socket
           if(fdTCP==-1) exit(1); //error
@@ -449,9 +479,10 @@ int main (int argc, char *argv[]) {
         	nt=write(fdTCP,message_sent,strlen(message_sent));
         	if(nt==-1) exit(1); //error
 
-        	nt=read(fdTCP,message_received,MAX_MESSAGE_TCP_RECEIVED + 1);
-        	if(nt==-1) exit(1); //error
-
+          //ATENTION
+          nt=read(fdTCP,message_received,MAX_MESSAGE_TCP_RECEIVED + 1)
+          if(nt==-1) exit(1); //error
+          //printf("Rt: %s\n", message_received);
 
           close(fdTCP);
           conectionUDP = true; // volta o UDP a ser a conexao default
@@ -566,7 +597,11 @@ int main (int argc, char *argv[]) {
             userLogStatus = true;
             strcpy(activeGroup,"");
             for (int i = 0; isdigit(message_sent[t]) > 0; i++, t++){
-              userLogID[i] = message_sent[t];
+              userLogID[i] = message_sent[t];  // guarda o id do user que esta logged in
+            }
+            t++;
+            for (int i = 0; isdigit(message_sent[t]) > 0 || isalpha(message_sent[t]) != 0; i++, t++){
+              userLogPass[i] = message_sent[t];  // guarda a pass do user que esta logged in
             }
           }
           else if(strcmp(status_res, "NOK") == 0){
@@ -622,7 +657,7 @@ int main (int argc, char *argv[]) {
         else if (strcmp(tarefa_res, "RGL") == 0) {
 
           char num_groups[MAX_GROUP_ID + 1] = ""; // numero de grupos respondido pelo server
-          char groups_list[MAX_GROUP_DISPLAY + 1] = ""; // lista de grupos
+          char groups_list[MAX_DISPLAY + 1] = ""; // lista de grupos
 
           // le quantos grupos o server respondeu
           for (int w = 0; isdigit(message_received[k]) > 0 ; k++, w++) {
@@ -638,7 +673,7 @@ int main (int argc, char *argv[]) {
             if(strcmp(groups_list, "") == 0)
               printf("Erro na Lista de Grupos\n");
             else
-              printf("Grupos:\n%s", groups_list);
+              printf("Existem %d grupos:\n%s", atoi(num_groups), groups_list);
           }
           else if (strcmp(num_groups,"0") == 0){
             printf("No groups available\n");
@@ -753,7 +788,7 @@ int main (int argc, char *argv[]) {
 
           char num_groups[MAX_GROUP_ID + 1] = ""; // numero de grupos respondido pelo server
           char status_res[MAX_STATUS] = ""; // status da tarefa respondida pelo server
-          char groups_list[MAX_GROUP_DISPLAY + 1] = ""; // lista de grupos
+          char groups_list[MAX_DISPLAY + 1] = ""; // lista de grupos
 
 
           // le quantos grupos o server respondeu ou status
@@ -773,7 +808,7 @@ int main (int argc, char *argv[]) {
             if(strcmp(groups_list, "") == 0)
               printf("Erro na Lista de Grupos\n");
             else
-              printf("Grupos:\n%s", groups_list);
+              printf("Existem %d grupos:\n%s", atoi(num_groups), groups_list);
 
           }
           else if (strcmp(num_groups, "0")){
@@ -796,7 +831,40 @@ int main (int argc, char *argv[]) {
         /* --------------------------------------------- */
 
         else if (strcmp(tarefa_res, "RUL") == 0){
-          printf("fui e voltei\n" );
+          /*char group_Name[MAX_GROUP_NAME + 1] = ""; // nome do grupo respondido pelo server
+          char users_list[MAX_DISPLAY + 1] = ""; // lista de users
+          char status_res[MAX_STATUS + 1] = ""; // status da tarefa respondida pelo server
+
+          // le o tipo de status da tarefa que o server respondeu
+          for (int w = 0; isalpha(message_received[k]) != 0; k++, w++) {
+              status_res[w] = message_received[k];
+          }
+
+          //Verificar status da resposta do servidor
+          if (strcmp(status_res, "OK") == 0){
+            k++;
+            // le o nome do grupo
+            for (int w = 0; isdigit(message_received[k]) > 0 || isalpha(message_received[k]) != 0 ||
+                            message_received[k] == '-' || message_received[k] == '_'; k++, w++) {
+                group_Name[w] = message_received[k];
+            }
+            //Verificar se lista de users cumpre Protocolo
+            k++;
+            //strcpy(users_list,validarListaUsers(k, message_received, users_list));
+            strcpy(users_list, "BOMBA");
+            if(strcmp(users_list, "") == 0)
+              printf("Erro na Lista de Users\n");
+            else
+              printf("Users subscribed to group %s:\n%s", group_Name, users_list);
+          }
+          else if (strcmp(status_res, "NOK") == 0){
+            printf("User list display failed\n");
+          }
+          else{
+            printf("Erro nas Mensagens do Protocolo\n");
+          }*/
+
+          printf("%s\n", message_received);
 
         }
 
