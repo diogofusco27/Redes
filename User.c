@@ -154,77 +154,97 @@ char* createMessage(char *comando, char *message){
     return message;
   }
 
-  //se a tarefa é um ulist, post ou retrieve, verifica o activeGroup e cria a mensagem
-  if (strcmp(message, "ULS") == 0 && strcmp(activeGroup, "") != 0){ // ulist
-    strcat(message, " ");           // 'ULS '
-    strcat(message, activeGroup);   // 'ULS activeGroup'
-    strcat(message, "\n");          // 'ULS activeGroup\n'
-    return message;
-  }
-  else if(strcmp(message, "PST") == 0 && strcmp(activeGroup, "") != 0){ // post
-    strcat(message, " ");           // 'PST '
-    strcat(message, userLogID);     // 'PST userID'
-    strcat(message, " ");           // 'PST userID '
-    strcat(message, activeGroup);   // 'ULS userID activeGroup'
-    strcat(message, " ");           // 'ULS userID activeGroup '
-
-    // copia o texto
-    i = i + 2;  //para saltar as '"' e começar no 1º caracter do texto
-    int k = 1;
-    text[0] = '"';
-    for (k ; comando[i] != '"' ; i++, k++) { // termina quando encontrar a outra '"'
-        text[k] = comando[i];
-    }
-    text[k] = '"';
-
-    // ATENTION tamanho do texto e so confirmado no server?
-    if(strlen(text) > MAX_TEXTO){ // quer dizer que o texto introduzido é maior do que 240 caracteres
-      strcpy(message, "TXT");
+  //verifica se a tarefa é um ulist, verifica o activeGroup e cria a mensagem
+  if (strcmp(message, "ULS") == 0){
+    if (strcmp(activeGroup, "") == 0){ //necessita de selecionar um activeGroup
+      strcpy(message,"AGR");
       return message;
     }
-
-    //tamanho do texto
-    sprintf(textSize, "%zu", strlen(text));
-
-    strcat(message, textSize);      // 'ULS UID activeGroup textSize'
-    strcat(message, " ");           // 'ULS UID activeGroup textSize '
-    strcat(message, text);          // 'ULS UID activeGroup textSize text'
-
-    //verifica se existe um ficheiro
-    i = i + 2;  //para saltar as '"' e começar no 1º caracter do nome do ficheiro
-    if(isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0 ||
-               comando[i] == '-' || comando[i] == '_' || comando[i] == '.'){ // existe ficheiro
-
-        // ATENTION
-        // FAZ COISAS COM O FICHEIRO
-
-    }
-    else{ // nao existe ficheiro
-      strcat(message, "\n"); // 'ULS UID activeGroup textSize text\n'
+    else{ // cria a mensagem
+      strcat(message, " ");           // 'ULS '
+      strcat(message, activeGroup);   // 'ULS activeGroup'
+      strcat(message, "\n");          // 'ULS activeGroup\n'
       return message;
     }
   }
-  else if (strcmp(message, "RTV") == 0 && strcmp(activeGroup, "") != 0){ // retrieve
-    strcat(message, " ");           // 'RTV '
-    strcat(message, userLogID);     // 'RTV userID'
-    strcat(message, " ");           // 'RTV userID '
-    strcat(message, activeGroup);   // 'RTV userID activeGroup'
-    strcat(message, " ");           // 'RTV userID activeGroup '
 
-    // copia a messsageID do comando para a mensagem
-    i++;
-    for (int k = 0; comando[i] !='\n'; i++, k++) {
-        messageID[k] = comando[i];
+  //verifica se a tarefa é um post, verifica o activeGroup e cria a mensagem
+  if(strcmp(message, "PST") == 0){
+    if (strcmp(activeGroup, "") == 0){ //necessita de selecionar um activeGroup
+      strcpy(message,"AGR");
+      return message;
     }
+    else{
+      strcat(message, " ");           // 'PST '
+      strcat(message, userLogID);     // 'PST userID'
+      strcat(message, " ");           // 'PST userID '
+      strcat(message, activeGroup);   // 'ULS userID activeGroup'
+      strcat(message, " ");           // 'ULS userID activeGroup '
 
-    strcat(message, messageID);     // 'RTV userID activeGroup msgID'
-    strcat(message, "\n");          // 'RTV userID activeGroup msgID\n'
-    return message;
+      // copia o texto
+      i = i + 2;  //para saltar as '"' e começar no 1º caracter do texto
+      int k = 1;
+      text[0] = '"';
+      for (k ; comando[i] != '"' ; i++, k++) { // termina quando encontrar a outra '"'
+          text[k] = comando[i];
+      }
+      text[k] = '"';
+
+      // ATENTION tamanho do texto e so confirmado no server?
+      if(strlen(text) > MAX_TEXTO){ // quer dizer que o texto introduzido é maior do que 240 caracteres
+        strcpy(message, "TXT");
+        return message;
+      }
+
+      //tamanho do texto
+      sprintf(textSize, "%zu", strlen(text));
+
+      strcat(message, textSize);      // 'ULS UID activeGroup textSize'
+      strcat(message, " ");           // 'ULS UID activeGroup textSize '
+      strcat(message, text);          // 'ULS UID activeGroup textSize text'
+
+      //verifica se existe um ficheiro
+      i = i + 2;  //para saltar as '"' e começar no 1º caracter do nome do ficheiro
+      if(isdigit(comando[i]) > 0 || isalpha(comando[i]) != 0 ||
+                 comando[i] == '-' || comando[i] == '_' || comando[i] == '.'){ // existe ficheiro
+
+          // ATENTION
+          // FAZ COISAS COM O FICHEIRO
+
+      }
+      else{ // nao existe ficheiro
+        strcat(message, "\n"); // 'ULS UID activeGroup textSize text\n'
+        return message;
+      }
+
+    }
   }
-  else{ //necessita de selecionar um activeGroup
-    strcpy(message,"AGR");
-    return message;
+
+  //verifica se a tarefa é um retreive, verifica o activeGroup e cria a mensagem
+  if (strcmp(message, "RTV") == 0){
+    if (strcmp(activeGroup, "") == 0){ //necessita de selecionar um activeGroup
+      strcpy(message,"AGR");
+      return message;
+    }
+    else{
+      strcat(message, " ");           // 'RTV '
+      strcat(message, userLogID);     // 'RTV userID'
+      strcat(message, " ");           // 'RTV userID '
+      strcat(message, activeGroup);   // 'RTV userID activeGroup'
+      strcat(message, " ");           // 'RTV userID activeGroup '
+
+      // copia a messsageID do comando para a mensagem
+      i++;
+      for (int k = 0; comando[i] !='\n'; i++, k++) {
+          messageID[k] = comando[i];
+      }
+
+      strcat(message, messageID);     // 'RTV userID activeGroup msgID'
+      strcat(message, "\n");          // 'RTV userID activeGroup msgID\n'
+      return message;
+    }
   }
+
 
   int k = 3;
   message[k] = ' '; //adicionar espaço a mensagem
@@ -293,7 +313,7 @@ char* validarListaMensagens(int k, char *message_received, char* messages_list){
       }
 
       strcat(messages_list, list_aux);
-      strcat(messages_list, " ");     //adiciona espaço
+      strcat(messages_list, " ");   //adiciona espaço
       strcpy(list_aux,"");
       k++;
 
@@ -302,9 +322,68 @@ char* validarListaMensagens(int k, char *message_received, char* messages_list){
             list_aux2[w] = message_received[k];
       }
 
-      if( strlen(list_aux) != MAX_USER_ID){
+      if( strlen(list_aux2) != MAX_USER_ID){
         return  "";
       }
+
+      strcat(messages_list, list_aux2);
+      strcat(messages_list, " ");   //adiciona espaço
+      strcpy(list_aux2,"");
+      k++;
+
+      //PARTE 3.1
+      for (int w = 0; isdigit(message_received[k]) > 0; w++, k++) {
+            list_aux3[w] = message_received[k];
+      }
+
+      if( atoi(list_aux3) < 0 || atoi(list_aux3) > MAX_TEXTO){
+        return "";
+      }
+
+      strcat(messages_list, list_aux3);
+      strcat(messages_list, " ");   //adiciona espaço
+      strcpy(list_aux3,"");
+      k++;
+
+      //PARTE 3.2
+      k++; // para saltar as '"'
+      list_aux3[0] = '"';   //adiciona aspas
+      int d = 1;
+      for (d; message_received[k] == '"'; d++, k++) {
+            list_aux3[d] = message_received[k];
+      }
+      list_aux3[d] = '"';   //adiciona aspas
+
+      if(strlen(list_aux3) > MAX_TEXTO){ // quer dizer que o texto introduzido é maior do que 240 caracteres
+        return "";
+      }
+
+      strcat(messages_list, list_aux3);
+      strcat(messages_list, " ");   //adiciona espaço
+      strcpy(list_aux3,"");
+      k++;
+
+      if(message_received[k + 1] == '/'){
+
+        //ATENTION FICHEIRO FAZ COISAS
+
+        //PARTE 4.1
+
+        //PARTE 4.2
+
+        //PARTE 4.3
+
+      }
+
+      strcat(messages_list, "\n");
+
+      //verifica se esta no fim da lista
+      if(message_received[k] == '\n'){
+        return messages_list;
+      }
+
+      k++;
+
     }
 }
 
@@ -312,14 +391,14 @@ char* validarListaMensagens(int k, char *message_received, char* messages_list){
 /******* Validar lista de grupos *******/
 char* validarListaGrupos(int k, char *message_received, char* groups_list){
   char list_aux[MAX_GROUP_ID + 1] = "";
+  char list_aux2[MAX_GROUP_NAME + 1] = "";
   char list_aux3[MAX_MESSAGE_ID + 1] = "";
-  int i = 0;
 
   while(1){ // formato -> GID GName MID
             // GID=Parte 1 , GName=Parte 2, MID=Parte 3
 
     //PARTE 1
-    for (int w = 0; isdigit(message_received[k]) > 0; i++, w++, k++) {
+    for (int w = 0; isdigit(message_received[k]) > 0;w++, k++) {
           list_aux[w] = message_received[k];
     }
 
@@ -328,31 +407,29 @@ char* validarListaGrupos(int k, char *message_received, char* groups_list){
     }
 
     strcat(groups_list, list_aux);
-    groups_list[i] = ' ';     //adiciona espaço
-    groups_list[i + 1] = '-'; //adiciona '-'
-    groups_list[i + 2] = ' '; //adiciona espaço
+    strcat(groups_list, " - ");
     strcpy(list_aux,"");
     k++;
-    i = i + 3;
 
 
     //PARTE 2
-    for (i; message_received[k] != ' '; i++, k++) {
+    for (int i = 0; message_received[k] != ' ' && i < MAX_GROUP_NAME; i++, k++) {
         if (isdigit(message_received[k]) > 0 || isalpha(message_received[k]) != 0 ||
             message_received[k] == '-' || message_received[k] == '_'){
-          groups_list[i] = message_received[k];
+          list_aux2[i] = message_received[k];
         }
         else{
           return "";
         }
     }
 
-    groups_list[i] = ' '; //adiciona espaço
-    k++, i++;
+    strcat(groups_list, list_aux2);
+    strcat(groups_list, " "); //adiciona espaço
+    k++;
 
 
     //PARTE 3
-    for (int w = 0; isdigit(message_received[k]) > 0; i++, w++, k++) {
+    for (int w = 0; isdigit(message_received[k]) > 0; w++, k++) {
           list_aux3[w] = message_received[k];
     }
 
@@ -361,7 +438,7 @@ char* validarListaGrupos(int k, char *message_received, char* groups_list){
     }
 
     strcat(groups_list, list_aux3);
-    groups_list[i] = '\n'; //adiciona espaço
+    strcat(groups_list, "\n"); //adiciona '\n'
     strcpy(list_aux3,"");
 
     //verifica se esta no fim da lista
@@ -369,7 +446,7 @@ char* validarListaGrupos(int k, char *message_received, char* groups_list){
       return groups_list;
     }
 
-    k++, i++;
+    k++;
   }
 
 }
@@ -471,9 +548,6 @@ int main (int argc, char *argv[]) {
 
     if(gethostname(address, MAX_IP + 1) == -1){
       printf("Failed to get Hostname\n");
-    }
-    else{
-      printf("Hostname: %s\n", address);
     }
     //h = gethostbyname(name);
     //a = (struct in_addr*)h->h_addr_list[0];
@@ -836,7 +910,7 @@ int main (int argc, char *argv[]) {
             if(strcmp(groups_list, "") == 0)
               printf("Erro na Lista de Grupos\n");
             else
-              printf("There are %d groups:\n%s", atoi(num_groups), groups_list);
+              printf("There are %s groups:\n%s", num_groups, groups_list);
           }
           else if (strcmp(num_groups,"0") == 0){
             printf("No groups available\n");
@@ -971,7 +1045,7 @@ int main (int argc, char *argv[]) {
             if(strcmp(groups_list, "") == 0)
               printf("Erro na Lista de Grupos\n");
             else
-              printf("There are %d groups:\n%s", atoi(num_groups), groups_list);
+              printf("There are %s groups:\n%s", num_groups, groups_list);
 
           }
           else if (strcmp(num_groups, "0") == 0){
@@ -1098,7 +1172,7 @@ int main (int argc, char *argv[]) {
             if(strcmp(message_list, "") == 0)
               printf("Erro na Lista de Mensagens\n");
             else
-              printf("There are %d messages:\n%s", num_msg, message_list);
+              printf("There are %s messages:\n%s", num_msg, message_list);
 
           }
           else if(strcmp(status_res, "EOF") == 0){
